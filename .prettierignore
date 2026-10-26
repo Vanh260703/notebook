@@ -1,0 +1,15 @@
+node_modules
+dist
+.next
+coverage
+pnpm-lock.yaml
+apps/api/src/database/migrations
+apps/web/next-env.d.ts
+# Tài liệu và cấu hình do người dùng quản lý
+PROJECT.md
+PROJECT.md.bak
+CLAUDE.md
+BAO-CAO-*.md
+docs
+.claude
+*.key

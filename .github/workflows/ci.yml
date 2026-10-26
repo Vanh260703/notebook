@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: notebook
+          POSTGRES_PASSWORD: notebook
+          POSTGRES_DB: notebook
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U notebook -d notebook"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://notebook:notebook@localhost:5432/notebook
+      API_URL: http://localhost:3001
+      # e2e dùng chung DB của service postgres (CI=true cho phép tên DB không có hậu tố _test).
+      TEST_DATABASE_URL: postgresql://notebook:notebook@localhost:5432/notebook
+      # Giá trị giả chỉ cho CI; setup-env.ts của e2e tự đặt mật khẩu/secret test riêng.
+      APP_PASSWORD: ci-only-password-not-secret
+      SESSION_SECRET: ci-only-session-secret-0123456789abcdef
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Phiên bản pnpm lấy từ "packageManager" trong package.json.
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -r build
+      - run: pnpm -r lint
+      - run: pnpm format:check
+      - run: pnpm -r test
+
+      - name: Migration chạy được trên DB trống
+        run: pnpm --filter api migration:run
+      - name: Entity khớp với migration (không còn diff)
+        run: pnpm --filter api migration:check
+
+      - name: e2e API với Postgres thật
+        run: pnpm --filter api test:e2e
+
+      - name: Build image API
+        run: docker build -f apps/api/Dockerfile -t notebook-api:ci .

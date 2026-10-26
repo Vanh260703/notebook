@@ -1,0 +1,285 @@
+# Notebook: sổ tay học tập & cá nhân
+
+> Tài liệu cốt lõi của dự án: app này để làm gì, dùng ra sao và được xây thế nào.
+> Cập nhật lần cuối: 2026-10-26
+
+---
+
+## 1. Dự án này là gì?
+
+**Notebook** là app ghi chú cá nhân chạy trên web. Bạn dùng được ở mọi nơi: laptop, máy công ty hay điện thoại. App lưu hai nhóm nội dung:
+
+- **Kiến thức học được (Learning):** đoạn code, cách fix lỗi, ghi chú từ sách, khóa học, bài viết.
+- **Chuyện cá nhân (Personal):** nhật ký, ý tưởng, mục tiêu, danh sách.
+
+App có ba mục tiêu:
+
+1. **Ghi nhanh**: mở app là viết được ngay, không phải nghĩ xem nên để ở đâu.
+2. **Tìm lại nhanh**: gõ vài chữ là ra, gõ có dấu hay không dấu đều được.
+3. **Không quên**: app chủ động đưa kiến thức cũ ra để bạn ôn lại.
+
+## 2. Vấn đề cần giải quyết
+
+| Vấn đề hiện tại | Notebook giải quyết bằng |
+|---|---|
+| Kiến thức nằm rải rác ở Notion, Google Docs, tab trình duyệt, tin nhắn tự gửi cho mình | Gom về một chỗ duy nhất, có tag và tìm kiếm |
+| Học xong rồi quên, gặp lại lỗi cũ thì phải Google lại từ đầu | Tìm kiếm full-text, sau này thêm flashcard để ôn |
+| App lớn nặng và thừa tính năng, còn ghi chú local thì không mở được ở máy khác | App gọn, deploy online, dùng trên mọi thiết bị |
+| Sợ bị khóa dữ liệu trong một nền tảng | Có nút xuất toàn bộ ra file `.md` bất cứ lúc nào |
+
+## 3. Cách dùng hằng ngày
+
+### Một ngày điển hình
+
+- **Buổi sáng:** mở app, vào trang **Hôm nay** để thấy mọi note của ngày. Bạn tạo một note ghi kế hoạch trong ngày.
+- **Khi đang code:** gặp lỗi Docker và tìm ra cách fix. Bấm `Ctrl + K` rồi chọn "Note mới", dán đoạn code, gắn tag `#docker`, lưu.
+- **Trên điện thoại:** đọc được một ý hay. Mở app (đã cài ra màn hình chính dưới dạng PWA), bấm **Quick capture**, gõ một dòng. Note này vào **Inbox** để về máy tính sắp xếp sau.
+- **Buổi tối:** viết nhật ký vào một note loại **Personal**. Muốn viết thêm note thứ hai, thứ ba trong ngày cũng được, tất cả đều hiện trên trang Hôm nay.
+- **Hai tháng sau:** gặp lại lỗi cũ. Gõ "docker volume" vào ô tìm kiếm là thấy ngay note cũ.
+- **Cuối tuần:** mở trang **Ôn tập** để xem lại những gì đã học trong tuần.
+
+### Vòng đời của một ghi chú
+
+```mermaid
+flowchart LR
+    A[Ghi nhanh<br/>Quick capture / Note mới] --> B[Inbox]
+    B --> C[Sắp xếp<br/>gắn tag, chọn loại]
+    C --> D[Kho ghi chú]
+    D --> E[Tìm lại<br/>search, tag, filter]
+    D --> F[Ôn tập<br/>review, flashcard]
+    F --> D
+```
+
+## 4. Tính năng
+
+### 4.1 MVP: bản đầu tiên cần có
+
+| # | Tính năng | Mô tả |
+|---|---|---|
+| 1 | Đăng nhập | Chỉ một tài khoản là của bạn, không mở đăng ký công khai |
+| 2 | Tạo, sửa, xóa note | Viết bằng Markdown, có preview, highlight code block |
+| 3 | Loại note | `LEARNING`, `PERSONAL` |
+| 4 | Tag | Gắn nhiều tag cho mỗi note, lọc theo tag |
+| 5 | Tìm kiếm | Full-text trên tiêu đề và nội dung, gõ không dấu vẫn ra |
+| 6 | Trang Hôm nay / theo ngày | Gom mọi note của một ngày thành dòng thời gian, mỗi ngày bao nhiêu note cũng được. Có lịch để nhảy sang ngày khác |
+| 7 | Inbox / Quick capture | Ghi một dòng thật nhanh, sắp xếp sau |
+| 8 | Responsive + PWA | Dùng tốt trên điện thoại, cài được ra màn hình chính |
+| 9 | Thùng rác | Xóa mềm, khôi phục được trong 30 ngày |
+| 10 | Export | Tải toàn bộ note về dưới dạng file `.zip` chứa các file `.md` |
+
+### 4.2 Giai đoạn sau
+
+- **Liên kết giữa các note:** viết `[[tên note]]` để link và xem backlinks.
+- **Flashcard / spaced repetition:** đánh dấu `Q:` / `A:` trong note, app nhắc ôn đúng lúc.
+- **"Ngày này năm trước":** hiện lại các note cũ viết vào cùng ngày.
+- **Heatmap:** biểu đồ số ngày có viết, giống contribution graph của GitHub.
+- **Upload ảnh:** chèn ảnh chụp màn hình vào note (Vercel Blob / Cloudinary / S3).
+- **AI:** tóm tắt note, gợi ý tag, hỏi đáp trên chính kho note của bạn (Claude API).
+- **Graph view:** vẽ mạng lưới các note liên kết với nhau.
+- **Chia sẻ công khai:** tạo link public cho một note Learning (note Personal thì không bao giờ).
+
+## 5. Kiến trúc
+
+```mermaid
+flowchart LR
+    U[Trình duyệt<br/>laptop / điện thoại] --> W
+
+    subgraph Vercel
+        W[Next.js<br/>giao diện + rewrite /api/*]
+    end
+
+    subgraph Container host[Render / Railway / Fly.io]
+        A[NestJS API<br/>Docker image]
+    end
+
+    subgraph Database[Neon / Supabase]
+        D[(PostgreSQL)]
+    end
+
+    W -- "/api/* → proxy" --> A
+    A --> D
+```
+
+### Các quyết định quan trọng
+
+1. **Vercel không chạy Docker.** Vercel tự build và chạy Next.js, nên phần frontend deploy thẳng lên Vercel, không cần Dockerfile. Docker được dùng cho NestJS và cho môi trường dev ở máy local.
+
+2. **NestJS chạy ở nơi chạy được container**, ví dụ Render, Railway, Fly.io hoặc một VPS. Vẫn có thể ép NestJS chạy dạng serverless trên Vercel, nhưng sẽ bị cold start, giới hạn thời gian chạy và mất luôn lợi ích của Docker, nên không khuyến nghị.
+
+3. **Không lưu note thành file trên server.** Filesystem của Vercel và của container chỉ là tạm thời, deploy lại là mất hết. Nội dung Markdown được lưu trong PostgreSQL. Khi muốn có file `.md` thì dùng tính năng Export.
+
+4. **Next.js proxy request `/api/*` sang NestJS** bằng `rewrites` trong `next.config`. Trình duyệt chỉ thấy một domain, nên cookie đăng nhập hoạt động đơn giản và không phải xử lý CORS hay third-party cookie.
+
+## 6. Tech stack
+
+| Tầng | Công nghệ | Ghi chú |
+|---|---|---|
+| Monorepo | pnpm workspaces (thêm Turborepo nếu cần) | Chia sẻ type giữa web và api |
+| Frontend | Next.js (App Router), TypeScript | Deploy lên Vercel |
+| UI | Tailwind CSS, shadcn/ui | |
+| Editor | CodeMirror 6 | Viết Markdown thô, có phím tắt |
+| Render Markdown | react-markdown, remark-gfm, rehype-highlight | Bảng, checklist, highlight code |
+| Data fetching | TanStack Query | Cache, optimistic update |
+| Backend | NestJS, TypeScript | Chạy trong Docker |
+| ORM | Prisma | Schema và migration |
+| Database | PostgreSQL | Neon hoặc Supabase (có gói free) |
+| Auth | JWT trong cookie httpOnly, băm mật khẩu bằng argon2 | |
+| Validation | class-validator (NestJS), zod (dùng chung) | |
+| Container | Docker, docker compose | Dev local và build image cho API |
+| CI/CD | GitHub Actions | Lint, test, build và push image |
+
+## 7. Mô hình dữ liệu
+
+```mermaid
+erDiagram
+    User ||--o{ Note : "sở hữu"
+    User ||--o{ Tag : "sở hữu"
+    Note ||--o{ NoteTag : ""
+    Tag  ||--o{ NoteTag : ""
+
+    User {
+        uuid id PK
+        string email
+        string passwordHash
+        datetime createdAt
+    }
+    Note {
+        uuid id PK
+        uuid userId FK
+        string title
+        text content "Markdown"
+        enum type "LEARNING | PERSONAL"
+        enum status "INBOX | ACTIVE | ARCHIVED"
+        date entryDate "ngày của note, mặc định hôm nay, có index"
+        boolean pinned
+        datetime createdAt
+        datetime updatedAt
+        datetime deletedAt "xóa mềm"
+    }
+    Tag {
+        uuid id PK
+        uuid userId FK
+        string name
+    }
+    NoteTag {
+        uuid noteId FK
+        uuid tagId FK
+    }
+```
+
+**Note theo ngày:** không có loại note "daily" riêng. Note nào cũng có `entryDate`, và một ngày có bao nhiêu note cũng được. Trang "Hôm nay" chỉ là truy vấn `WHERE entryDate = <ngày>`. Có `entryDate` riêng, không dùng thẳng `createdAt`, vì hai lý do:
+
+- `createdAt` là timestamp UTC. Note viết lúc 6h sáng giờ Việt Nam (UTC+7) sẽ bị tính sang ngày hôm trước. `entryDate` là ngày theo giờ địa phương, do frontend gửi lên.
+- Cho phép ghi lùi ngày, ví dụ sáng nay mới viết nhật ký của tối hôm qua.
+
+**Tìm kiếm:** dùng full-text search có sẵn của PostgreSQL, gồm cột `tsvector` và index GIN. Bật thêm extension `unaccent` để gõ "ghi chu" vẫn tìm ra "ghi chú". Chưa cần đến Elasticsearch.
+
+## 8. API chính (NestJS)
+
+| Method | Endpoint | Mục đích |
+|---|---|---|
+| `POST` | `/auth/login` | Đăng nhập, set cookie |
+| `POST` | `/auth/logout` | Đăng xuất |
+| `GET` | `/auth/me` | Lấy thông tin người dùng hiện tại |
+| `GET` | `/notes?type=&tag=&status=&date=&page=` | Danh sách note, có lọc (`date=2026-10-26` cho trang Hôm nay) |
+| `GET` | `/notes/:id` | Chi tiết một note |
+| `POST` | `/notes` | Tạo note |
+| `PATCH` | `/notes/:id` | Sửa note |
+| `DELETE` | `/notes/:id` | Xóa mềm (vào thùng rác) |
+| `POST` | `/notes/:id/restore` | Khôi phục từ thùng rác |
+| `GET` | `/days?from=&to=` | Số note của từng ngày trong khoảng (cho lịch và heatmap) |
+| `GET` | `/tags` | Danh sách tag và số note của mỗi tag |
+| `GET` | `/search?q=` | Tìm kiếm full-text |
+| `GET` | `/export` | Tải file `.zip` chứa toàn bộ note dạng `.md` |
+
+## 9. Cấu trúc thư mục
+
+```
+notebook/
+├── apps/
+│   ├── web/                  # Next.js → deploy lên Vercel
+│   │   ├── app/
+│   │   ├── components/
+│   │   └── next.config.ts    # rewrites /api/* → NestJS
+│   └── api/                  # NestJS → đóng gói Docker
+│       ├── src/
+│       │   ├── auth/
+│       │   ├── notes/
+│       │   ├── tags/
+│       │   ├── search/
+│       │   └── prisma/
+│       ├── prisma/
+│       │   └── schema.prisma
+│       └── Dockerfile
+├── packages/
+│   └── shared/               # type, DTO, zod schema dùng chung
+├── docker-compose.yml        # postgres + api (+ web) cho dev local
+├── .env.example
+├── pnpm-workspace.yaml
+└── PROJECT.md                # tài liệu này
+```
+
+## 10. Docker & deploy
+
+### Dev ở máy local
+
+```bash
+docker compose up -d    # PostgreSQL (5432) + NestJS API (3001)
+pnpm --filter web dev   # Next.js tại http://localhost:3000
+```
+
+Next.js có thể chạy ngoài Docker khi dev để hot reload nhanh hơn. Nếu muốn, có thể thêm service `web` vào compose.
+
+### Dockerfile cho API (multi-stage)
+
+1. **deps**: cài dependencies bằng pnpm.
+2. **build**: `prisma generate` rồi `nest build`.
+3. **runtime**: image `node:*-alpine` gọn, chỉ chứa `dist/` và production dependencies, chạy bằng user không phải root. Khi khởi động thì chạy `prisma migrate deploy` trước, rồi mới start server.
+
+### Luồng deploy production
+
+```mermaid
+flowchart LR
+    G[git push main] --> V[Vercel tự build<br/>apps/web]
+    G --> GA[GitHub Actions<br/>lint + test]
+    GA --> I[Build Docker image<br/>apps/api]
+    I --> R[Push lên GHCR]
+    R --> H[Render / Railway / Fly.io<br/>kéo image mới và chạy]
+    H --> M[prisma migrate deploy]
+```
+
+### Biến môi trường
+
+| Biến | Dùng ở | Ví dụ |
+|---|---|---|
+| `DATABASE_URL` | api | `postgresql://user:pass@host:5432/notebook` |
+| `JWT_SECRET` | api | chuỗi ngẫu nhiên dài |
+| `PORT` | api | `3001` |
+| `API_URL` | web | `https://notebook-api.onrender.com` (đích của rewrite) |
+
+**Lưu ý chi phí:** gói free của các dịch vụ host container thường cho API "ngủ" khi không có truy cập, nên lần mở đầu tiên có thể chậm vài chục giây. Nếu thấy khó chịu thì nâng lên gói rẻ nhất (khoảng 5 USD/tháng) hoặc dùng VPS.
+
+## 11. Bảo mật & riêng tư
+
+- Chỉ có một tài khoản, tạo bằng seed script. API không có endpoint đăng ký.
+- Cookie đặt `httpOnly`, `Secure`, `SameSite=Lax`.
+- Giới hạn số lần thử đăng nhập bằng `@nestjs/throttler`.
+- Note `PERSONAL` không bao giờ được chia sẻ công khai.
+- Backup: dùng tính năng backup của Neon/Supabase, kết hợp chạy Export định kỳ.
+
+## 12. Lộ trình
+
+| Giai đoạn | Việc chính | Xong khi |
+|---|---|---|
+| **0. Khung dự án** | Monorepo, docker compose, Prisma schema, CI cơ bản | `docker compose up` chạy được, web gọi được API |
+| **1. Lõi** | Auth, CRUD note, tag, editor Markdown và preview | Đăng nhập, viết, sửa, xóa được note có tag |
+| **2. Dùng hằng ngày** | Tìm kiếm, trang Hôm nay và lịch, inbox / quick capture, thùng rác | Dùng thay được cách ghi chú hiện tại |
+| **3. Lên mạng** | Deploy Vercel, API và DB, PWA, backup, export | Mở được trên điện thoại ở bất cứ đâu |
+| **4. Nâng cao** | Backlinks, flashcard, heatmap, upload ảnh, AI | Tùy nhu cầu, làm dần |
+
+## 13. Câu hỏi còn mở
+
+- [ ] Host NestJS ở đâu: Render, Railway, Fly.io hay VPS? Dùng gói free hay trả phí?
+- [ ] Editor viết Markdown thô và preview riêng, hay WYSIWYG kiểu Notion?
+- [ ] Có cần dùng offline không? Offline-first trên PWA phức tạp hơn đáng kể.
+- [ ] Có muốn public một phần note Learning thành blog / digital garden không?

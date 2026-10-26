@@ -1,0 +1,48 @@
+name: notebook
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: notebook
+      POSTGRES_DB: notebook
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Đặt POSTGRES_PASSWORD trong .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U notebook -d notebook']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    image: notebook-api
+    restart: unless-stopped
+    init: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      TZ: UTC
+      PORT: 3001
+      DATABASE_URL: postgresql://notebook:${POSTGRES_PASSWORD}@postgres:5432/notebook
+      APP_PASSWORD: ${APP_PASSWORD:?Đặt APP_PASSWORD trong .env}
+      SESSION_SECRET: ${SESSION_SECRET:?Đặt SESSION_SECRET trong .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    ports:
+      - '127.0.0.1:3001:3001'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://127.0.0.1:3001/health']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  pgdata:

@@ -1,0 +1,6 @@
+# Chỉ dùng trên laptop, bật bằng COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml trong .env.
+# Mở PostgreSQL ra 127.0.0.1 để chạy migration CLI và `pnpm --filter api start:dev` trên host.
+services:
+  postgres:
+    ports:
+      - '127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432'
