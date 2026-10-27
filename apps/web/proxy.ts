@@ -18,5 +18,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // BẮT BUỘC loại /api (nếu không chính POST /api/auth/login bị redirect), /_next, /login và file tĩnh.
-  matcher: ['/((?!api|_next|login|favicon.ico|.*\\..*).*)'],
+  // /apple-icon không có đuôi file: iOS tải nó không kèm cookie, không loại thì nhận về trang login.
+  matcher: ['/((?!api|_next|login|apple-icon|favicon.ico|.*\\..*).*)'],
 };
