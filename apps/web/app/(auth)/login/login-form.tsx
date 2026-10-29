@@ -10,11 +10,13 @@ import { getSession, login } from '@/lib/api/auth';
 import { errorMessage, isApiError } from '@/lib/api/client';
 import { qk } from '@/lib/query-keys';
 
+/** Mở app là vào trang Hôm nay. */
+const HOME = '/today';
+
 /** Chỉ cho chuyển về đường dẫn nội bộ (chặn open redirect kiểu ?next=//evil.com). */
 function safeNext(raw: string | null): string {
-  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\'))
-    return '/notes';
-  if (raw === '/login' || raw.startsWith('/login?')) return '/notes';
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return HOME;
+  if (raw === '/login' || raw.startsWith('/login?')) return HOME;
   return raw;
 }
 

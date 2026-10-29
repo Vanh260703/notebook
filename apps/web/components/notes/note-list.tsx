@@ -1,7 +1,7 @@
 'use client';
 
-import type { NoteListItem } from '@notebook/shared';
-import { CalendarDays, Pin, RotateCcw, Trash2 } from 'lucide-react';
+import { hasHighlight, type NoteListItem } from '@notebook/shared';
+import { CalendarDays, Check, Clock, Pin, RotateCcw, Settings2, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,17 +18,22 @@ import {
   formatDeleted,
   formatRelative,
   formatShortDay,
+  formatTrashExpiry,
   isDifferentDay,
 } from '@/lib/date';
 import { pickFocusAfterRemoval } from '@/lib/list-focus';
 import { stripMarkdown } from '@/lib/markdown';
 import { cn } from '@/lib/utils';
+import { Highlighted } from './highlighted';
 import { StatusChip, TagChip, TYPE_META, TypeLabel } from './note-meta';
+import { TriageDialog } from './triage-dialog';
 import {
   useDeleteNote,
   useDeleteNotePermanently,
   useRestoreNote,
   useTogglePin,
+  useUpdateNoteFields,
+  type NoteFields,
 } from './use-note-actions';
 
 /** Ẩn khi có chuột và không hover/focus trong card. Màn cảm ứng (không hover) luôn hiện. */
@@ -42,12 +47,13 @@ const listClass = 'flex flex-col gap-2 md:gap-2.5';
 
 const MAX_TAGS = 3;
 
-type Variant = 'default' | 'trash';
+type Variant = 'default' | 'trash' | 'inbox';
 
 /**
  * Danh sách note dạng card. Link phủ toàn card (bấm đâu cũng mở note), tên link chỉ là tiêu đề.
  * - `default`: ghim, xóa (vào thùng rác); có note ghim thì tách nhóm "Đã ghim" / "Ghi chú khác".
  * - `trash`: khôi phục, xóa vĩnh viễn (có hỏi lại); link mở view chỉ đọc.
+ * - `inbox`: "Đang dùng" (một chạm), "Sắp xếp" (loại, trạng thái, tag), xóa; không có ghim.
  * Sau khi gỡ một card, focus sang card kế tiếp (rồi card trước, rồi h1 của trang).
  */
 export function NoteList({
@@ -55,17 +61,22 @@ export function NoteList({
   variant = 'default',
   onTagClick,
   showStatus = true,
+  grouped = true,
 }: {
   items: NoteListItem[];
   variant?: Variant;
   onTagClick?: (tag: string) => void;
   /** Ẩn chip trạng thái (trang Inbox: mọi note đều là Inbox). */
   showStatus?: boolean;
+  /** Tách nhóm "Đã ghim". Tắt khi tìm kiếm (thứ tự theo độ khớp). */
+  grouped?: boolean;
 }) {
   const pin = useTogglePin();
   const del = useDeleteNote();
   const restore = useRestoreNote();
   const purge = useDeleteNotePermanently();
+  const update = useUpdateNoteFields();
+  const [triage, setTriage] = useState<NoteListItem | null>(null);
   const [confirmPurge, setConfirmPurge] = useState<NoteListItem | null>(null);
   const purgeFocus = useRef<HTMLElement | null>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -97,6 +108,13 @@ export function NoteList({
     document.querySelector<HTMLElement>(`[data-pin-for="${id}"]`)?.focus();
   }, [items]);
 
+  /** Đổi trường từ Inbox; rời Inbox thì card bị gỡ: focus sang card kế tiếp. */
+  const applyFields = (note: NoteListItem, fields: NoteFields) => {
+    const leaving = fields.status !== undefined && fields.status !== 'INBOX';
+    if (leaving) removeWith(note.id, () => update.mutate({ item: note, fields }));
+    else update.mutate({ item: note, fields });
+  };
+
   const togglePin = (note: NoteListItem) => {
     refocusPin.current = note.id;
     pin.mutate(note);
@@ -105,7 +123,11 @@ export function NoteList({
   const renderCard = (note: NoteListItem, index: number, heading: 'h2' | 'h3') => {
     const Heading = heading;
     const name = note.title || 'Không có tiêu đề';
-    const excerpt = stripMarkdown(note.excerpt);
+    // Tìm kiếm: tiêu đề và đoạn trích có <mark>. Đoạn trích không có chỗ khớp (chỉ tiêu đề khớp,
+    // hoặc khớp mảnh tách như "compose") thì dùng excerpt như danh sách thường.
+    const hl = note.highlight;
+    const snippet = hl && hasHighlight(hl.snippet) ? stripMarkdown(hl.snippet) : null;
+    const excerpt = snippet ?? stripMarkdown(note.excerpt);
     const archived = note.status === 'ARCHIVED';
     const extraTags = note.tags.slice(MAX_TAGS);
     return (
@@ -151,12 +173,20 @@ export function NoteList({
               data-note-link={note.id}
               className="after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:outline-none"
             >
-              {note.title || <span className="text-muted-foreground">Không có tiêu đề</span>}
+              {note.title ? (
+                hl && hasHighlight(hl.title) ? (
+                  <Highlighted text={hl.title} />
+                ) : (
+                  note.title
+                )
+              ) : (
+                <span className="text-muted-foreground">Không có tiêu đề</span>
+              )}
             </GuardedLink>
           </Heading>
           {excerpt ? (
             <p className="mt-1 line-clamp-2 text-sm leading-relaxed break-words text-muted-foreground pointer-coarse:line-clamp-3">
-              {excerpt}
+              {snippet ? <Highlighted text={snippet} /> : excerpt}
             </p>
           ) : null}
           <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
@@ -176,9 +206,16 @@ export function NoteList({
             ) : null}
             <span className="ml-auto text-muted-foreground tabular-nums">
               {variant === 'trash' && note.deletedAt ? (
-                <time dateTime={note.deletedAt} title={`Xóa lúc ${formatDateTime(note.deletedAt)}`}>
-                  {formatDeleted(note.deletedAt)}
-                </time>
+                <>
+                  <time
+                    dateTime={note.deletedAt}
+                    title={`Xóa lúc ${formatDateTime(note.deletedAt)}`}
+                  >
+                    {formatDeleted(note.deletedAt)}
+                  </time>
+                  <span aria-hidden> · </span>
+                  <TrashExpiry deletedAt={note.deletedAt} />
+                </>
               ) : (
                 <time dateTime={note.updatedAt} title={`Sửa lúc ${formatDateTime(note.updatedAt)}`}>
                   <span className="sr-only">Sửa </span>
@@ -226,6 +263,40 @@ export function NoteList({
                 <Trash2 />
               </Button>
             </>
+          ) : variant === 'inbox' ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => applyFields(note, { status: 'ACTIVE' })}
+                aria-label={`Chuyển “${name}” sang Đang dùng`}
+                title="Chuyển sang Đang dùng"
+                className="max-md:size-7 max-md:px-0 max-md:pointer-coarse:size-10"
+              >
+                <Check className="text-status-active" />
+                <span className="max-md:sr-only">Đang dùng</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setTriage(note)}
+                aria-haspopup="dialog"
+                aria-label={`Sắp xếp ${name}`}
+                title="Sắp xếp: loại, trạng thái, tag"
+              >
+                <Settings2 />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => removeWith(note.id, (id) => del.mutate(id))}
+                aria-label={`Xóa ${name}`}
+                title="Xóa (chuyển vào thùng rác)"
+                className={revealOnHover}
+              >
+                <Trash2 />
+              </Button>
+            </>
           ) : (
             <>
               <Button
@@ -260,7 +331,7 @@ export function NoteList({
     );
   };
 
-  const pinned = variant === 'default' ? items.filter((n) => n.pinned) : [];
+  const pinned = variant === 'default' && grouped ? items.filter((n) => n.pinned) : [];
   const others = items.filter((n) => !pinned.includes(n));
 
   return (
@@ -288,6 +359,10 @@ export function NoteList({
       ) : (
         <ul className={listClass}>{items.map((n, i) => renderCard(n, i, 'h2'))}</ul>
       )}
+
+      {variant === 'inbox' ? (
+        <TriageDialog note={triage} onClose={() => setTriage(null)} onSave={applyFields} />
+      ) : null}
 
       {variant === 'trash' ? (
         <Dialog open={confirmPurge !== null} onOpenChange={(o) => !o && setConfirmPurge(null)}>
@@ -325,5 +400,20 @@ export function NoteList({
         </Dialog>
       ) : null}
     </>
+  );
+}
+
+/** "Còn 30 ngày" trước khi bị tự xóa vĩnh viễn. Còn ≤ 3 ngày: màu cảnh báo kèm icon (không chỉ màu). */
+function TrashExpiry({ deletedAt }: { deletedAt: string }) {
+  const { text, urgent, purgeAt } = formatTrashExpiry(deletedAt);
+  return (
+    <time
+      dateTime={purgeAt.toISOString()}
+      title={`Tự xóa vĩnh viễn lúc ${formatDateTime(purgeAt.toISOString())}`}
+      className={cn('font-medium', urgent && 'text-warning')}
+    >
+      {urgent ? <Clock className="mr-0.5 inline size-3 -translate-y-px" aria-hidden /> : null}
+      {text}
+    </time>
   );
 }

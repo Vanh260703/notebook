@@ -1,7 +1,7 @@
 # Notebook: sổ tay học tập & cá nhân
 
 > Tài liệu cốt lõi của dự án: app này để làm gì, dùng ra sao và được xây thế nào.
-> Cập nhật lần cuối: 2026-10-26
+> Cập nhật lần cuối: 2026-10-29
 
 ---
 
@@ -127,13 +127,13 @@ flowchart LR
 | Editor | CodeMirror 6 | Viết Markdown thô, có phím tắt |
 | Render Markdown | react-markdown, remark-gfm, rehype-highlight | Bảng, checklist, highlight code |
 | Data fetching | TanStack Query | Cache, optimistic update |
-| Outbox | IndexedDB (qua `idb-keyval` hoặc `idb`) | Hàng đợi note chưa gửi |
+| Outbox | IndexedDB, tự bọc khoảng 100 dòng (không dùng `idb`/`idb-keyval`) | Hàng đợi note chưa gửi, có `deleteIfRev` nguyên tử |
 | Backend | NestJS, TypeScript | Chạy trong Docker trên server ở nhà |
 | ORM | TypeORM (`@nestjs/typeorm`) | Entity + migration, `synchronize: false`; search dùng QueryBuilder |
 | Database | PostgreSQL | Container cùng máy, không mở port ra ngoài |
 | Auth | Một mật khẩu trong env + cookie httpOnly có ký HMAC | Không có bảng user, không JWT |
 | Validation | zod trong `packages/shared` | NestJS dùng `ZodValidationPipe` (`nestjs-zod`), không dùng class-validator |
-| Lịch chạy | `@nestjs/schedule` | Dọn thùng rác |
+| Lịch chạy | `setTimeout` nối tiếp trong `TrashPurgeService` (không dùng `@nestjs/schedule`) | Dọn thùng rác mỗi giờ, lần đầu 60 s sau khi API khởi động. `@nestjs/schedule` 12.x chỉ có ESM, API build CommonJS |
 | Đưa ra internet | Tailscale Funnel | |
 | Backup | `pg_dump`, `age` (mã hóa), `rclone` → Google Drive | Chạy bằng crontab trên server |
 | Container | Docker, docker compose | Dev local và chạy trên server |
@@ -179,11 +179,16 @@ App chỉ có một người dùng nên **không có bảng `User` và không c�
 
 **Xung đột khi sửa:** `PATCH /notes/:id` gửi kèm `version` mà client đang có. Nếu khác `version` trong DB, API trả `409` kèm bản hiện tại để frontend báo cho bạn chọn giữ bản nào. Sửa thành công thì `version` tăng 1.
 
-**Tìm kiếm:** dùng full-text search có sẵn của PostgreSQL, chưa cần Elasticsearch. Ba điểm cần làm đúng:
+**Tìm kiếm:** dùng full-text search có sẵn của PostgreSQL, chưa cần Elasticsearch. Những điểm cần làm đúng:
 
-- `unaccent()` không phải hàm `IMMUTABLE` nên không dùng thẳng trong generated column được. Phải bọc lại.
+- `unaccent()` không phải hàm `IMMUTABLE` nên không dùng thẳng trong generated column được. Phải bọc lại (`f_unaccent`).
 - Dùng config `'simple'`, không dùng `'english'`: stemming tiếng Anh làm hỏng từ tiếng Việt.
-- Full-text chỉ khớp nguyên từ. Để gõ "dock" ra "docker", query dùng prefix: mỗi từ người dùng gõ thành `từ:*`, nối bằng `&`.
+- **Bỏ dấu ở cả hai phía:** cột `search` dùng `f_unaccent`, và query cũng phải là `to_tsquery('simple', f_unaccent(:tsq))`. Gõ "duong" ra "Đường", gõ "đường" ra "duong".
+- Full-text chỉ khớp nguyên từ. Để gõ "dock" ra "docker", query dùng prefix: chuỗi người dùng gõ được tách ở JS (`searchTerms` trong `packages/shared`, chỉ giữ chữ và số, tối đa 8 từ), mỗi từ thành `'từ':*`, nối bằng `&`. Vì chỉ còn chữ/số nên chuỗi tsquery luôn hợp lệ (không 500, không injection cú pháp). Không có từ nào (chỉ dấu câu, emoji) thì trả danh sách rỗng.
+- **Token code bị dính dấu câu** (`docker-compose.yml`, `@nestjs/typeorm`, `useQuery`): thêm vector trọng số D tách theo dấu câu và camelCase, để gõ "compose", "typeorm", "query" vẫn ra. Vector A/B giữ token nguyên nên "usequery", "node.js" vẫn khớp.
+- **Xếp hạng:** note có mọi từ khớp trong tiêu đề luôn đứng trước, sau đó theo `ts_rank` (A=1, B=0.4, D=0.1), rồi `updatedAt`. Không xếp theo ghim khi tìm.
+- **Highlight:** `ts_headline` với text search configuration `public.vn_unaccent` (copy `simple`, map token qua dictionary `unaccent`), nên khớp không dấu và prefix mà vẫn trả chữ gốc có dấu. Chỉ chạy cho các id của trang hiện tại. Chỗ khớp bọc bằng ký tự Private Use (U+E000/U+E001); web tách ra rồi bọc `<mark>` bằng React, không render HTML.
+- Không dùng `pg_trgm` (không tìm giữa từ, ví dụ "ocker"). Nếu sau này cần thì thêm migration riêng.
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS unaccent;
@@ -194,24 +199,35 @@ CREATE FUNCTION f_unaccent(text) RETURNS text
 
 ALTER TABLE "Note" ADD COLUMN "search" tsvector GENERATED ALWAYS AS (
   setweight(to_tsvector('simple', f_unaccent(coalesce("title", ''))), 'A') ||
-  setweight(to_tsvector('simple', f_unaccent(coalesce("content", ''))), 'B')
+  setweight(to_tsvector('simple', f_unaccent(coalesce("content", ''))), 'B') ||
+  -- tách thêm theo dấu câu và camelCase: docker-compose.yml → docker compose yml
+  setweight(to_tsvector('simple', regexp_replace(
+    f_unaccent(coalesce("title", '') || ' ' || coalesce("content", '')),
+    '([[:lower:]])([[:upper:]])|[^[:alnum:]]+', '\1 \2', 'g')), 'D')
 ) STORED;
 
 CREATE INDEX "Note_search_idx" ON "Note" USING GIN ("search");
+
+-- Chỉ dùng cho ts_headline (highlight giữ chữ có dấu)
+CREATE TEXT SEARCH CONFIGURATION public.vn_unaccent (COPY = pg_catalog.simple);
+ALTER TEXT SEARCH CONFIGURATION public.vn_unaccent
+  ALTER MAPPING FOR word, hword, hword_part, numword, numhword, hword_numpart
+  WITH public.unaccent, pg_catalog.simple;
 ```
 
 Với TypeORM:
 
-- Cột `search` khai báo trong entity: `@Column({ type: 'tsvector', generatedType: 'STORED', asExpression: '...', select: false, insert: false, update: false })`, với `asExpression` đúng như biểu thức trong SQL trên.
+- Cột `search` khai báo trong entity: `@Column({ type: 'tsvector', generatedType: 'STORED', asExpression: NOTE_SEARCH_EXPRESSION, select: false, insert: false, update: false })`, với `NOTE_SEARCH_EXPRESSION` đúng như biểu thức trong SQL trên.
 - Migration đầu tiên sinh bằng `typeorm migration:generate`, rồi thêm tay `CREATE EXTENSION unaccent` và `CREATE FUNCTION f_unaccent` vào đầu hàm `up()`, vì cột generated cần hàm này có trước. Migration sinh ra có dòng `INSERT INTO "typeorm_metadata"` cho cột generated: giữ nguyên, và tên DB phải là `notebook` ở mọi môi trường.
+- Migration `SearchV2` (GĐ2) đổi biểu thức cột: TypeORM drop rồi add cột, nên file sinh ra phải có `CREATE INDEX "Note_search_idx"` (drop cột kéo index đi theo). Config `vn_unaccent` thêm tay ở đầu `up()`, TypeORM không theo dõi nó.
 - GIN index khai báo bằng `@Index('Note_search_idx', ['search'], { type: 'gin' })` (TypeORM 1.x), migration tự sinh ra.
 - CI chạy `migration:check` (`migration:generate --check`) để chắc không còn khác biệt nào giữa entity và DB.
 - Bảng ghi tên tường minh (`@Entity('Note')`, `@JoinTable({ name: 'NoteTag' })`). Quan hệ ManyToMany ghi `onDelete: 'CASCADE'` ở cả hai phía.
 - `type`, `status` là `varchar` + `CHECK`, danh sách giá trị lấy từ hằng trong `packages/shared`.
 - Tên tag chuẩn hóa ở zod: trim, NFC, chữ thường. Nên chuẩn hóa NFC cả `title` và `content`.
-- Query search bằng QueryBuilder: `.where("note.search @@ to_tsquery('simple', :q)")`, sắp xếp theo `ts_rank`.
+- Query search bằng QueryBuilder: ``.andWhere(`"note"."search" @@ to_tsquery('simple', f_unaccent(:tsq))`)``. Đếm (`getCount`) trước khi thêm `ORDER BY` theo alias `rank`.
 
-**Xóa mềm:** `deletedAt` là `@DeleteDateColumn`, dùng `softDelete()`, `restore()` và `withDeleted: true` khi xem thùng rác.
+**Xóa mềm:** `deletedAt` là `@DeleteDateColumn`, dùng `softDelete()`, `restore()` và `withDeleted: true` khi xem thùng rác. Note nằm trong thùng rác quá 30 ngày (`TRASH_RETENTION_DAYS` trong `packages/shared`) bị `TrashPurgeService` xóa vĩnh viễn trong vòng một giờ sau đó (`DELETE … WHERE "deletedAt" < now − 30 ngày`, idempotent). `NoteTag` xóa theo nhờ CASCADE; tag không còn note nào **không** tự xóa (tránh race với lúc lưu note đang gắn đúng tag đó), vẫn thấy ở trang Tag để tự xóa. Web hiện "Còn N ngày" tính từ `deletedAt`.
 
 **Kiểm tra `version`:** dùng cột `int` thường, **không** dùng `@VersionColumn` (nó tự tăng cả khi `save()`, `softDelete()`, `restore()` và không chặn ghi đè). `PATCH` phải update có điều kiện `WHERE id = :id AND version = :version` kèm `version = version + 1`; không có dòng nào được cập nhật thì trả `409`.
 
@@ -226,14 +242,14 @@ Mọi endpoint đều yêu cầu cookie đăng nhập, trừ `/health` và `/aut
 | `GET` | `/health` | Kiểm tra API và kết nối DB |
 | `POST` | `/auth/login` | Kiểm tra mật khẩu, set cookie |
 | `POST` | `/auth/logout` | Xóa cookie |
-| `GET` | `/notes?q=&type=&tag=&status=&date=&trashed=&page=` | Danh sách note có lọc. `q` để tìm kiếm, `date=2026-10-26` cho trang Hôm nay, `trashed=true` để xem thùng rác |
+| `GET` | `/notes?q=&type=&tag=&status=&date=&trashed=&excludeArchived=&page=&limit=` | Danh sách note có lọc. `q` để tìm kiếm (tối đa 200 ký tự; có `q` thì sắp theo độ khớp và mỗi item có thêm `highlight: { title, snippet }`), `date=2026-10-26` cho trang Hôm nay, `trashed=true` để xem thùng rác, `excludeArchived=true` để bỏ note lưu trữ (mặc định `false`) |
 | `GET` | `/notes/:id` | Chi tiết một note |
 | `POST` | `/notes` | Tạo note với `id` do client gửi. Nếu `id` đã tồn tại thì trả về note đó (để outbox gửi lại an toàn) |
 | `PATCH` | `/notes/:id` | Sửa note, gửi kèm `version`. Lệch phiên bản thì trả `409` |
 | `DELETE` | `/notes/:id` | Xóa mềm (vào thùng rác) |
 | `POST` | `/notes/:id/restore` | Khôi phục từ thùng rác |
 | `DELETE` | `/notes/:id/permanent` | Xóa vĩnh viễn một note trong thùng rác |
-| `GET` | `/days?from=&to=` | Số note của từng ngày trong khoảng (cho lịch và heatmap) |
+| `GET` | `/days?from=&to=` | Số note (chưa xóa, gồm lưu trữ) của từng ngày có note trong khoảng, cả hai đầu đều tính: `{ items: { date, count }[] }`. `from > to` hoặc khoảng từ 400 ngày trở lên thì `400` |
 | `GET` | `/tags` | Danh sách tag và số note của mỗi tag |
 | `PATCH` | `/tags/:id` | Đổi tên tag |
 | `DELETE` | `/tags/:id` | Xóa tag (gỡ khỏi mọi note) |
@@ -247,7 +263,7 @@ notebook/
 │   ├── web/                  # Next.js → deploy lên Vercel
 │   │   ├── app/
 │   │   ├── components/
-│   │   ├── lib/outbox.ts     # hàng đợi IndexedDB cho note mới
+│   │   ├── lib/outbox/       # hàng đợi IndexedDB cho note mới
 │   │   └── next.config.ts    # rewrites /api/* → API_URL
 │   └── api/                  # NestJS → Docker trên server ở nhà
 │       ├── src/
@@ -411,3 +427,8 @@ Export `.md` là lớp dự phòng thứ hai.
 - Host NestJS: server ở nhà, đưa ra internet bằng Tailscale Funnel; có thể đổi sang Cloudflare Tunnel khi có domain.
 - Offline: không làm offline-first; chỉ có outbox cho việc tạo note.
 - Public note / blog: không. Mọi nội dung chỉ mình bạn đọc.
+- Trạng thái `ARCHIVED` (lưu trữ = "cất đi, không mất"): danh sách Ghi chú mặc định ẩn note lưu trữ, có dòng "Đã ẩn N note lưu trữ · Xem"; chọn bộ lọc "Lưu trữ" thì thấy. Vẫn hiện trong tìm kiếm, trang Hôm nay, lịch và `/days`. Số "Ghi chú" ở sidebar không tính note lưu trữ; số note của tag (`GET /tags`) vẫn tính.
+- Trang `/` chuyển sang `/today`; đăng nhập xong (không có `?next=`) cũng vào `/today`.
+- Nút giữa tab bar mobile là Quick capture. Note mới đầy đủ nằm ở sheet "Thêm", đầu trang Ghi chú và nút "Mở rộng" trong sheet ghi nhanh.
+- Mọi note mới (Quick capture và trình soạn "Note mới") đi qua outbox. Đăng xuất xóa outbox và nháp localStorage trên máy đó, có hỏi lại nếu còn note chưa gửi.
+- Dọn thùng rác không dùng `@nestjs/schedule` và không tự xóa tag mồ côi.

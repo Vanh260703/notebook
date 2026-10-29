@@ -3,19 +3,24 @@
 import {
   NOTE_STATUSES,
   NOTE_TYPES,
+  SEARCH_LIMIT_DEFAULT,
+  SEARCH_QUERY_MAX,
   noteStatusSchema,
   noteTypeSchema,
   type ListNotesQuery,
   type NoteStatus,
   type NoteType,
+  searchTerms,
 } from '@notebook/shared';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Inbox, ListFilter, NotebookPen, X } from 'lucide-react';
+import { Archive, Inbox, ListFilter, NotebookPen, SearchX, X } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { EmptyState } from '@/components/empty-state';
 import { NoteList } from '@/components/notes/note-list';
 import { NoteListSkeleton } from '@/components/notes/note-list-skeleton';
 import { STATUS_META, TYPE_META } from '@/components/notes/note-meta';
+import { SearchBox } from '@/components/notes/search-box';
+import { PendingList } from '@/components/outbox/pending-list';
 import { PageHeader } from '@/components/page-header';
 import { Pagination } from '@/components/pagination';
 import { QueryError } from '@/components/query-error';
@@ -78,8 +83,10 @@ export function NotesViewFallback({ scope = 'all' }: { scope?: NotesScope }) {
 }
 
 /**
- * Danh sách note, bộ lọc nằm trên URL: ?tag=&type=&status=&page=
- * `scope="inbox"`: trang Inbox, cố định status INBOX (bỏ qua ?status) và ẩn bộ lọc trạng thái.
+ * Danh sách note, bộ lọc nằm trên URL: ?q=&tag=&type=&status=&page=
+ * - Có `q`: tìm kiếm (sắp theo độ khớp, có highlight, gồm cả note lưu trữ), 20 kết quả mỗi trang.
+ * - Không có `q` và không lọc trạng thái: ẩn note lưu trữ, có dòng "Đã ẩn N note lưu trữ · Xem".
+ * `scope="inbox"`: trang Inbox, cố định status INBOX (bỏ qua ?status và ?q), ẩn bộ lọc trạng thái.
  */
 export function NotesView({ scope = 'all' }: { scope?: NotesScope }) {
   const sp = useSearchParams();
@@ -87,20 +94,43 @@ export function NotesView({ scope = 'all' }: { scope?: NotesScope }) {
   const pathname = usePathname();
   const inbox = scope === 'inbox';
 
+  const q = inbox ? '' : (sp.get('q') ?? '').trim().slice(0, SEARCH_QUERY_MAX);
+  const searching = q !== '';
+  // q chỉ có dấu câu/emoji: không gửi request (API cũng trả rỗng), nhắc gõ chữ hoặc số.
+  const noTerms = searching && searchTerms(q).length === 0;
+  const pageSize = searching ? SEARCH_LIMIT_DEFAULT : PAGE_SIZE;
+
   // Giá trị lạ trên URL thì bỏ qua thay vì gửi lên để nhận 400.
-  const query: ListNotesQuery = {
+  const status = inbox ? 'INBOX' : noteStatusSchema.safeParse(sp.get('status')).data;
+  const hideArchived = !inbox && !searching && !status;
+  const filters: ListNotesQuery = {
     tag: sp.get('tag') || undefined,
     type: noteTypeSchema.safeParse(sp.get('type')).data,
-    status: inbox ? 'INBOX' : noteStatusSchema.safeParse(sp.get('status')).data,
+  };
+  const query: ListNotesQuery = {
+    ...filters,
+    q: searching ? q : undefined,
+    status,
+    excludeArchived: hideArchived || undefined,
     page: parsePage(sp.get('page')),
-    limit: PAGE_SIZE,
+    limit: pageSize,
   };
 
   const { data, error, isPending, isFetching, refetch } = useQuery({
     queryKey: qk.noteList(query),
-    queryFn: () => listNotes(query),
+    queryFn: ({ signal }) => listNotes(query, signal),
     placeholderData: keepPreviousData,
+    enabled: !noTerms,
   });
+  // Số note lưu trữ bị ẩn, cùng bộ lọc loại/tag (key nằm dưới ['notes','list']: tự làm mới).
+  const archivedQuery: ListNotesQuery = { ...filters, status: 'ARCHIVED', limit: 1 };
+  const archivedHidden = useQuery({
+    queryKey: qk.noteList(archivedQuery),
+    queryFn: ({ signal }) => listNotes(archivedQuery, signal),
+    select: (d) => d.total,
+    enabled: hideArchived,
+    staleTime: 30_000,
+  }).data;
   const tags = useQuery({ queryKey: qk.tags, queryFn: listTags, staleTime: 60_000 });
 
   const setParams = (patch: Record<string, string | undefined>) => {
@@ -142,7 +172,21 @@ export function NotesView({ scope = 'all' }: { scope?: NotesScope }) {
     </NativeSelect>
   );
 
-  const empty = hasFilter ? (
+  const empty = searching ? (
+    <EmptyState
+      icon={SearchX}
+      title="Không tìm thấy note nào"
+      text="Thử từ ngắn hơn hoặc bỏ bớt bộ lọc."
+      action={
+        hasFilter ? (
+          <Button variant="outline" onClick={clearFilters}>
+            <X aria-hidden />
+            Bỏ lọc
+          </Button>
+        ) : undefined
+      }
+    />
+  ) : hasFilter ? (
     <EmptyState
       icon={ListFilter}
       title="Không có note nào khớp bộ lọc"
@@ -177,9 +221,11 @@ export function NotesView({ scope = 'all' }: { scope?: NotesScope }) {
     <div className="flex w-full max-w-5xl flex-col gap-5 md:gap-6">
       <PageHeader
         title={PAGE_TITLE[scope]}
-        count={data?.total}
+        count={noTerms ? undefined : data?.total}
         description={PAGE_DESCRIPTION[scope]}
       />
+
+      {!inbox ? <SearchBox value={q} onCommit={(v) => setParams({ q: v || undefined })} /> : null}
 
       {/* Desktop: một hàng. Mobile: trạng thái một hàng riêng (4 ô), loại + tag hàng dưới. */}
       <div className="flex flex-wrap items-center gap-2">
@@ -211,7 +257,40 @@ export function NotesView({ scope = 'all' }: { scope?: NotesScope }) {
         ) : null}
       </div>
 
-      {error ? (
+      {searching && data && !noTerms ? (
+        <p role="status" className="-mt-2 text-sm text-muted-foreground md:-mt-3">
+          <span className="font-medium text-foreground tabular-nums">{data.total}</span> kết quả cho
+          &ldquo;{q}&rdquo;
+          {!query.status ? <> · gồm cả note lưu trữ</> : null}
+        </p>
+      ) : null}
+      {hideArchived && archivedHidden ? (
+        <p className="-mt-2 flex items-center gap-1.5 text-sm text-muted-foreground md:-mt-3">
+          <Archive className="size-3.5 shrink-0 text-status-archived" aria-hidden />
+          <span>
+            Đã ẩn <span className="tabular-nums">{archivedHidden}</span> note lưu trữ
+          </span>
+          <span aria-hidden>·</span>
+          <button
+            type="button"
+            onClick={() => setParams({ status: 'ARCHIVED' })}
+            className="rounded-sm font-medium text-primary-ink underline-offset-4 hover:underline pointer-coarse:py-2"
+          >
+            Xem
+            <span className="sr-only"> note lưu trữ</span>
+          </button>
+        </p>
+      ) : null}
+
+      {inbox ? <PendingList hideIds={new Set(data?.items.map((i) => i.id))} /> : null}
+
+      {noTerms ? (
+        <EmptyState
+          icon={SearchX}
+          title="Gõ chữ hoặc số để tìm"
+          text="Ô tìm bỏ qua dấu câu và biểu tượng."
+        />
+      ) : error ? (
         <QueryError error={error} onRetry={() => void refetch()} />
       ) : isPending ? (
         <NoteListSkeleton />
@@ -223,14 +302,16 @@ export function NotesView({ scope = 'all' }: { scope?: NotesScope }) {
             items={data.items}
             onTagClick={(tag) => setParams({ tag })}
             showStatus={!inbox}
+            grouped={!searching && !inbox}
+            variant={inbox ? 'inbox' : 'default'}
           />
         </div>
       )}
 
-      {data && (page > 1 || data.hasMore) ? (
+      {data && !noTerms && (page > 1 || data.hasMore) ? (
         <Pagination
           page={page}
-          pages={pageCount(data.total, PAGE_SIZE)}
+          pages={pageCount(data.total, pageSize)}
           hasMore={data.hasMore}
           onPage={(p) => setParams({ page: pageParam(p) })}
         />

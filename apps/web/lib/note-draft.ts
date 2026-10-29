@@ -46,3 +46,18 @@ export function diffDraft(base: Note, draft: NoteDraft): Omit<UpdateNoteInput, '
 
 export const hasChanges = (base: Note, draft: NoteDraft): boolean =>
   Object.keys(diffDraft(base, draft)).length > 0;
+
+/** Hai draft giống nhau sau khi chuẩn hóa như API (dùng khi note mới đang chờ gửi trong outbox). */
+export function sameDraft(a: NoteDraft, b: NoteDraft): boolean {
+  const x = norm(a);
+  const y = norm(b);
+  return (
+    x.title === y.title &&
+    x.content === y.content &&
+    x.type === y.type &&
+    x.status === y.status &&
+    x.entryDate === y.entryDate &&
+    x.pinned === y.pinned &&
+    x.tags.join('\u0000') === y.tags.join('\u0000')
+  );
+}

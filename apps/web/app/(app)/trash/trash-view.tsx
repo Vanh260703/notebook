@@ -1,6 +1,6 @@
 'use client';
 
-import type { ListNotesQuery } from '@notebook/shared';
+import { TRASH_RETENTION_DAYS, type ListNotesQuery } from '@notebook/shared';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
@@ -16,7 +16,7 @@ import { qk } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
-const DESCRIPTION = 'Note đã xóa. Mở để xem, khôi phục hoặc xóa vĩnh viễn.';
+const DESCRIPTION = `Note đã xóa được giữ ${TRASH_RETENTION_DAYS} ngày rồi tự xóa vĩnh viễn. Mở để xem, khôi phục hoặc xóa ngay.`;
 
 export function TrashViewFallback() {
   return (
@@ -29,8 +29,8 @@ export function TrashViewFallback() {
 
 /**
  * Thùng rác (chỉ dùng API có sẵn): GET /notes?trashed=true, mới xóa đứng trước.
- * Mở note là view chỉ đọc; khôi phục / xóa vĩnh viễn ngay trên card.
- * Không có "Dọn sạch thùng rác" và không đếm ngược 30 ngày (cron dọn thuộc GĐ2).
+ * Mở note là view chỉ đọc; khôi phục / xóa vĩnh viễn ngay trên card, kèm "Còn N ngày" trước khi
+ * API tự xóa (TrashPurgeService). Cố ý không có "Dọn sạch thùng rác".
  */
 export function TrashView() {
   const sp = useSearchParams();

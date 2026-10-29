@@ -1,3 +1,6 @@
+import { TRASH_RETENTION_DAYS } from '@notebook/shared';
+import { diffDays, parseYmd, weekdayName } from './calendar';
+
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /**
@@ -79,4 +82,69 @@ export const isDifferentDay = (iso: string, ymd: string): boolean =>
 export function formatDeleted(iso: string, now: Date = new Date()): string {
   const rel = formatRelative(iso, now);
   return `Đã xóa ${rel.charAt(0).toLowerCase()}${rel.slice(1)}`;
+}
+
+const DAY = 24 * HOUR;
+
+/** Thời điểm note trong thùng rác bị API tự xóa vĩnh viễn (deletedAt + TRASH_RETENTION_DAYS). */
+export const trashPurgeAt = (deletedAt: string): Date =>
+  new Date(Date.parse(deletedAt) + TRASH_RETENTION_DAYS * DAY);
+
+export interface TrashExpiry {
+  /** "Còn 12 ngày" | "Còn 1 ngày" | "Còn dưới 1 ngày" | "Sắp bị xóa" (quá hạn, job chưa chạy). */
+  text: string;
+  /** Câu cho banner của note: "Sẽ tự xóa vĩnh viễn sau 12 ngày (26/11)." */
+  sentence: string;
+  /** Còn ≤ 3 ngày: hiện màu cảnh báo kèm icon. */
+  urgent: boolean;
+  purgeAt: Date;
+}
+
+/** Số ngày còn lại trước khi note trong thùng rác bị xóa vĩnh viễn (job dọn chạy mỗi giờ). */
+export function formatTrashExpiry(deletedAt: string, now: Date = new Date()): TrashExpiry {
+  const purgeAt = trashPurgeAt(deletedAt);
+  const ms = purgeAt.getTime() - now.getTime();
+  const when = `${pad(purgeAt.getDate())}/${pad(purgeAt.getMonth() + 1)}`;
+  if (ms <= 0) {
+    return {
+      text: 'Sắp bị xóa',
+      sentence: 'Đã quá hạn giữ, sẽ bị xóa vĩnh viễn trong giờ tới.',
+      urgent: true,
+      purgeAt,
+    };
+  }
+  if (ms < DAY) {
+    return {
+      text: 'Còn dưới 1 ngày',
+      sentence: `Sẽ tự xóa vĩnh viễn lúc ${formatTime(purgeAt.toISOString())} (${when}).`,
+      urgent: true,
+      purgeAt,
+    };
+  }
+  const days = Math.ceil(ms / DAY);
+  return {
+    text: `Còn ${days} ngày`,
+    sentence: `Sẽ tự xóa vĩnh viễn sau ${days} ngày (${when}).`,
+    urgent: days <= 3,
+    purgeAt,
+  };
+}
+
+/** '2026-10-27' -> "Thứ Ba, 27 tháng 10, 2026" (không qua Intl để test ổn định). */
+export function formatLongDay(ymd: string): string {
+  const { y, m, d } = parseYmd(ymd);
+  return `${weekdayName(ymd)}, ${d} tháng ${m}, ${y}`;
+}
+
+/**
+ * Tiêu đề trang theo ngày: "Hôm nay" | "Hôm qua" | "Ngày mai" | tên thứ (trong 7 ngày gần đây)
+ * | "26/10/2025".
+ */
+export function formatDayTitle(ymd: string, today: string): string {
+  const diff = diffDays(ymd, today);
+  if (diff === 0) return 'Hôm nay';
+  if (diff === 1) return 'Hôm qua';
+  if (diff === -1) return 'Ngày mai';
+  if (diff > 1 && diff < 7) return weekdayName(ymd);
+  return formatEntryDate(ymd);
 }

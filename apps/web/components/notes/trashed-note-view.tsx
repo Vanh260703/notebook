@@ -4,7 +4,7 @@ import type { Note } from '@notebook/shared';
 import { CalendarDays, RotateCcw, Trash2 } from 'lucide-react';
 import { MarkdownPreview } from '@/components/editor/markdown-preview';
 import { Button } from '@/components/ui/button';
-import { formatEntryDate } from '@/lib/date';
+import { formatEntryDate, formatTrashExpiry } from '@/lib/date';
 import { StatusChip, TagChip, TypeLabel } from './note-meta';
 
 /**
@@ -28,7 +28,10 @@ export function TrashedNoteView({
         className="flex flex-wrap items-center gap-3 rounded-xl border border-warning/40 bg-warning-bg px-4 py-3 text-sm"
       >
         <Trash2 className="size-4 shrink-0 text-warning" aria-hidden />
-        <span className="mr-auto">Note này đang trong thùng rác. Khôi phục để sửa.</span>
+        <span className="mr-auto">
+          Note này đang trong thùng rác. Khôi phục để sửa.
+          {note.deletedAt ? <> {formatTrashExpiry(note.deletedAt).sentence}</> : null}
+        </span>
         <Button onClick={onRestore} disabled={restoring}>
           <RotateCcw aria-hidden />
           {restoring ? 'Đang khôi phục…' : 'Khôi phục'}

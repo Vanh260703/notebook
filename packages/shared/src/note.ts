@@ -22,6 +22,8 @@ export const LIST_LIMIT_DEFAULT = 50;
 export const LIST_LIMIT_MAX = 100;
 export const LIST_PAGE_MAX = 10_000;
 export const SEARCH_QUERY_MAX = 200;
+/** Note trong thùng rác được giữ bấy nhiêu ngày (tính từ deletedAt) rồi API tự xóa vĩnh viễn. */
+export const TRASH_RETENTION_DAYS = 30;
 
 const titleSchema = z.string().trim().normalize('NFC').max(NOTE_TITLE_MAX);
 // Không trim content: khoảng trắng có nghĩa trong Markdown.
@@ -65,7 +67,7 @@ export const updateNoteSchema = z
 
 // Không strict: bỏ qua query lạ (cache-buster...).
 export const listNotesQuerySchema = z.object({
-  /** Tìm kiếm: làm ở Giai đoạn 2, Giai đoạn 1 trả 501. */
+  /** Tìm kiếm full-text (không dấu, prefix). Có q thì sắp theo độ khớp và item có `highlight`. */
   q: z
     .string()
     .trim()
@@ -79,6 +81,8 @@ export const listNotesQuerySchema = z.object({
   tag: tagNameSchema.optional(),
   date: entryDateSchema.optional(),
   trashed: z.stringbool().default(false),
+  /** Bỏ note ARCHIVED (danh sách Ghi chú mặc định). Không gửi = gồm cả ARCHIVED (như GĐ1). */
+  excludeArchived: z.stringbool().default(false),
   page: z.coerce.number().int().min(1).max(LIST_PAGE_MAX).default(1),
   limit: z.coerce.number().int().min(1).max(LIST_LIMIT_MAX).default(LIST_LIMIT_DEFAULT),
 });
@@ -101,9 +105,16 @@ export const noteSchema = z.object({
   tags: z.array(tagSchema),
 });
 
+/**
+ * Đoạn khớp khi tìm kiếm. Chỗ khớp bọc bằng HIGHLIGHT_START/HIGHLIGHT_END (search.ts).
+ * Client KHÔNG render như HTML: tách bằng splitHighlight rồi bọc <mark> bằng React.
+ */
+export const searchHighlightSchema = z.object({ title: z.string(), snippet: z.string() });
+
 export const noteListItemSchema = noteSchema
   .omit({ content: true })
-  .extend({ excerpt: z.string() });
+  // highlight chỉ có khi request có q.
+  .extend({ excerpt: z.string(), highlight: searchHighlightSchema.optional() });
 
 export const noteListResponseSchema = z.object({
   items: z.array(noteListItemSchema),
@@ -115,6 +126,7 @@ export const noteListResponseSchema = z.object({
 
 export type Note = z.infer<typeof noteSchema>;
 export type NoteListItem = z.infer<typeof noteListItemSchema>;
+export type SearchHighlight = z.infer<typeof searchHighlightSchema>;
 export type NoteListResponse = z.infer<typeof noteListResponseSchema>;
 /** Web dùng type input khi gửi request (chưa có default). */
 export type CreateNoteInput = z.input<typeof createNoteSchema>;
@@ -125,8 +137,8 @@ export type UpdateNoteInput = z.input<typeof updateNoteSchema>;
  */
 export type ListNotesQuery = Omit<
   z.input<typeof listNotesQuerySchema>,
-  'page' | 'limit' | 'trashed'
-> & { page?: number; limit?: number; trashed?: boolean };
+  'page' | 'limit' | 'trashed' | 'excludeArchived'
+> & { page?: number; limit?: number; trashed?: boolean; excludeArchived?: boolean };
 /** Output: giá trị API nhận được sau khi validate (đã có default, đã chuẩn hóa). */
 export type CreateNoteData = z.output<typeof createNoteSchema>;
 export type UpdateNoteData = z.output<typeof updateNoteSchema>;

@@ -24,9 +24,16 @@ const sqlIn = (vals: readonly string[]) => vals.map((v) => `'${v}'`).join(', ');
 
 // KHÔNG sửa chuỗi này nếu không định sinh migration mới
 // (TypeORM so sánh từng ký tự với DB, chỉ trim hai đầu).
+// A: tiêu đề, B: nội dung (token giữ nguyên: "usequery", "node.js", "iphone").
+// D: tách thêm theo dấu câu và camelCase (docker-compose.yml → docker compose yml, useQuery → use
+// Query), chạy SAU f_unaccent nên [[:alnum:]] chỉ gặp chữ gần như ASCII. Trọng số D thấp nhất,
+// khớp nguyên token vẫn xếp trên khớp mảnh tách.
+// Chuỗi TS '\\1 \\2' là SQL '\1 \2' (standard_conforming_strings bật mặc định).
 export const NOTE_SEARCH_EXPRESSION =
   `setweight(to_tsvector('simple', f_unaccent(coalesce("title", ''))), 'A') || ` +
-  `setweight(to_tsvector('simple', f_unaccent(coalesce("content", ''))), 'B')`;
+  `setweight(to_tsvector('simple', f_unaccent(coalesce("content", ''))), 'B') || ` +
+  `setweight(to_tsvector('simple', regexp_replace(f_unaccent(coalesce("title", '') || ' ' || coalesce("content", '')), ` +
+  `'([[:lower:]])([[:upper:]])|[^[:alnum:]]+', '\\1 \\2', 'g')), 'D')`;
 
 @Entity('Note')
 @Check(`"type" IN (${sqlIn(NOTE_TYPES)})`)

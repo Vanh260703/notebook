@@ -1,13 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
+  formatDayTitle,
   formatDeleted,
+  formatLongDay,
   formatEntryDate,
   formatRelative,
   formatSavedAt,
   formatShortDay,
   formatTime,
+  formatTrashExpiry,
   isDifferentDay,
   localDate,
+  trashPurgeAt,
 } from './date';
 
 const originalTz = process.env.TZ;
@@ -124,5 +128,60 @@ describe('formatTime / formatSavedAt', () => {
   it('shows only the time for today, the full date otherwise', () => {
     expect(formatSavedAt('2026-10-27T01:05:00Z', now)).toBe('08:05');
     expect(formatSavedAt('2026-10-26T16:59:00Z', now)).toBe('23:59 26/10/2026');
+  });
+});
+
+describe('formatTrashExpiry', () => {
+  const deleted = '2026-10-27T07:05:00Z'; // 14:05 giờ Việt Nam
+  const at = (iso: string) => new Date(iso);
+
+  it('purges 30 days after deletedAt', () => {
+    expect(trashPurgeAt(deleted).toISOString()).toBe('2026-11-26T07:05:00.000Z');
+  });
+
+  it('just deleted: 30 days left, not urgent', () => {
+    const r = formatTrashExpiry(deleted, at(deleted));
+    expect(r).toMatchObject({ text: 'Còn 30 ngày', urgent: false });
+    expect(r.sentence).toBe('Sẽ tự xóa vĩnh viễn sau 30 ngày (26/11).');
+  });
+
+  it('rounds partial days up and becomes urgent at 3 days or less', () => {
+    expect(formatTrashExpiry(deleted, at('2026-11-22T08:00:00Z'))).toMatchObject({
+      text: 'Còn 4 ngày',
+      urgent: false,
+    });
+    expect(formatTrashExpiry(deleted, at('2026-11-23T08:00:00Z'))).toMatchObject({
+      text: 'Còn 3 ngày',
+      urgent: true,
+    });
+    expect(formatTrashExpiry(deleted, at('2026-11-25T07:05:00Z')).text).toBe('Còn 1 ngày');
+  });
+
+  it('under one day and overdue', () => {
+    const under = formatTrashExpiry(deleted, at('2026-11-25T08:00:00Z'));
+    expect(under).toMatchObject({ text: 'Còn dưới 1 ngày', urgent: true });
+    expect(under.sentence).toBe('Sẽ tự xóa vĩnh viễn lúc 14:05 (26/11).');
+    expect(formatTrashExpiry(deleted, at('2026-11-26T07:05:00Z'))).toMatchObject({
+      text: 'Sắp bị xóa',
+      urgent: true,
+    });
+    expect(formatTrashExpiry(deleted, at('2026-12-01T00:00:00Z')).text).toBe('Sắp bị xóa');
+  });
+});
+
+describe('formatLongDay / formatDayTitle', () => {
+  it('long form with weekday', () => {
+    expect(formatLongDay('2026-10-27')).toBe('Thứ Ba, 27 tháng 10, 2026');
+    expect(formatLongDay('2026-11-01')).toBe('Chủ Nhật, 1 tháng 11, 2026');
+  });
+
+  it('relative titles', () => {
+    const today = '2026-10-27';
+    expect(formatDayTitle('2026-10-27', today)).toBe('Hôm nay');
+    expect(formatDayTitle('2026-10-26', today)).toBe('Hôm qua');
+    expect(formatDayTitle('2026-10-28', today)).toBe('Ngày mai');
+    expect(formatDayTitle('2026-10-22', today)).toBe('Thứ Năm');
+    expect(formatDayTitle('2026-10-20', today)).toBe('20/10/2026');
+    expect(formatDayTitle('2026-11-05', today)).toBe('05/11/2026');
   });
 });

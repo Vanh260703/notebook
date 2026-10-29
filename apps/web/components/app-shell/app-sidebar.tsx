@@ -1,19 +1,36 @@
 'use client';
 
 import type { TagWithCount } from '@notebook/shared';
-import { Hash, Inbox, NotebookPen, NotebookText, Plus, Tags, Trash2 } from 'lucide-react';
+import {
+  CalendarDays,
+  CloudOff,
+  Hash,
+  Inbox,
+  NotebookPen,
+  NotebookText,
+  Plus,
+  Search,
+  Tags,
+  Trash2,
+  Zap,
+} from 'lucide-react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import { useCommands } from '@/components/command/command-provider';
 import { HealthStatus } from '@/components/health-status';
+import { useOutbox } from '@/components/outbox/outbox-provider';
 import { LogoutButton } from '@/components/logout-button';
 import { ThemeToggle } from '@/components/theme-toggle';
-import { buttonVariants } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { GuardedLink } from '@/components/unsaved-guard';
+import { isMacPlatform, shortcutLabel } from '@/lib/command';
+import { useHydrated } from '@/lib/use-hydrated';
 import { cn } from '@/lib/utils';
 import { NAV, isNavActive, isTagActive, pickSidebarTags, type NavKey } from './nav';
 import { useNavCounts, useTags } from './use-nav-counts';
 
 export const NAV_ICON: Record<NavKey, typeof Inbox> = {
+  today: CalendarDays,
   inbox: Inbox,
   notes: NotebookText,
   tags: Tags,
@@ -40,14 +57,17 @@ export function AppSidebar() {
         </GuardedLink>
       </div>
       <div className="shrink-0 px-3 pb-3">
-        <GuardedLink
-          href="/notes/new"
-          className={buttonVariants({ className: 'w-full justify-start' })}
-        >
-          <Plus aria-hidden />
-          Note mới
-        </GuardedLink>
-        {/* GĐ2: nút Tìm kiếm (Ctrl K) dạng ô giả, h-8, ngay dưới. */}
+        <div className="flex gap-1.5">
+          <GuardedLink
+            href="/notes/new"
+            className={buttonVariants({ className: 'min-w-0 flex-1 justify-start' })}
+          >
+            <Plus aria-hidden />
+            Note mới
+          </GuardedLink>
+          <CaptureButton />
+        </div>
+        <SearchButton />
       </div>
       <div className="flex-1 overflow-y-auto px-3 pb-3">
         {/* ?tag= cần useSearchParams: bọc Suspense để các trang tĩnh vẫn prerender được. */}
@@ -57,6 +77,7 @@ export function AppSidebar() {
       </div>
       {/* Xếp dọc: "Giao diện sáng" và "Đăng xuất" không vừa một hàng 216px với font Be Vietnam Pro. */}
       <div className="flex shrink-0 flex-col items-start gap-0.5 border-t border-sidebar-border p-3">
+        <PendingLink />
         <HealthStatus className="mb-1" />
         <ThemeToggle withLabel className="w-full justify-start px-2" />
         <LogoutButton className="w-full justify-start px-2" />
@@ -72,6 +93,7 @@ function SidebarBodyWithParams({ pathname }: { pathname: string }) {
 
 function SidebarBody({ pathname, tag }: { pathname: string; tag: string | null }) {
   const counts = useNavCounts();
+  const { pendingCount } = useOutbox();
   const tags = useTags();
   return (
     <>
@@ -84,7 +106,11 @@ function SidebarBody({ pathname, tag }: { pathname: string; tag: string | null }
                 label={item.label}
                 icon={NAV_ICON[item.key]}
                 active={isNavActive(item.key, pathname, tag)}
-                count={counts[item.key]}
+                count={
+                  item.key === 'inbox' && counts.inbox !== undefined
+                    ? counts.inbox + pendingCount
+                    : counts[item.key]
+                }
                 unit={item.key === 'tags' ? 'tag' : 'note'}
                 highlight={item.key === 'inbox'}
               />
@@ -210,5 +236,63 @@ function SidebarTags({
         </GuardedLink>
       ) : null}
     </section>
+  );
+}
+
+/** Nút trông như ô nhập: bấm thì mở bảng lệnh. Nhãn ⌘K/Ctrl K chỉ hiện sau khi hydrate. */
+function SearchButton() {
+  const { setPaletteOpen } = useCommands();
+  const hydrated = useHydrated();
+  const key = hydrated ? shortcutLabel('K', isMacPlatform(navigator.platform)) : null;
+  return (
+    <button
+      type="button"
+      onClick={() => setPaletteOpen(true)}
+      aria-haspopup="dialog"
+      aria-keyshortcuts="Control+K Meta+K"
+      className="mt-2 flex h-8 w-full items-center gap-2 rounded-lg border border-input bg-field px-2.5 text-sm text-muted-foreground transition-colors hover:border-ring/70 hover:text-foreground pointer-coarse:h-10"
+    >
+      <Search className="size-4 shrink-0" aria-hidden />
+      Tìm kiếm…
+      {key ? (
+        <kbd className="ml-auto rounded border bg-muted px-1.5 font-mono text-[0.7rem]" aria-hidden>
+          {key}
+        </kbd>
+      ) : null}
+    </button>
+  );
+}
+
+/** Nút ⚡ cạnh "Note mới": mở sheet ghi nhanh (phím C). */
+function CaptureButton() {
+  const { openCapture } = useCommands();
+  return (
+    <Button
+      variant="outline"
+      size="icon"
+      onClick={() => openCapture()}
+      aria-label="Ghi nhanh"
+      aria-haspopup="dialog"
+      aria-keyshortcuts="C"
+      title="Ghi nhanh (C)"
+    >
+      <Zap />
+    </Button>
+  );
+}
+
+/** "N note chờ gửi" (chỉ khi N > 0), dẫn tới Inbox nơi có danh sách chờ gửi. */
+function PendingLink() {
+  const { pendingCount } = useOutbox();
+  const hydrated = useHydrated();
+  if (!hydrated || pendingCount === 0) return null;
+  return (
+    <GuardedLink
+      href="/inbox"
+      className="mb-1 inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-xs font-medium text-warning hover:underline pointer-coarse:py-2"
+    >
+      <CloudOff className="size-3.5" aria-hidden />
+      {pendingCount} note chờ gửi
+    </GuardedLink>
   );
 }

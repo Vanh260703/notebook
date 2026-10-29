@@ -4,13 +4,13 @@ import type { ListNotesQuery, TagWithCount } from '@notebook/shared';
  * Điều hướng chính, dùng chung cho sidebar (desktop) và tab bar (mobile). Logic thuần, có test.
  * Icon gắn ở component (file này không phụ thuộc React).
  */
-export type NavKey = 'inbox' | 'notes' | 'tags' | 'trash';
+export type NavKey = 'today' | 'inbox' | 'notes' | 'tags' | 'trash';
 
 export type NavItem = { key: NavKey; href: string; label: string };
 
 export const NAV: readonly NavItem[] = [
-  // GĐ2: { key: 'today', href: '/today', label: 'Hôm nay' } đứng đầu;
-  // ô "Tìm kiếm (Ctrl K)" nằm dưới nút Note mới trong sidebar, không phải một mục ở đây.
+  // Ô "Tìm kiếm (Ctrl K)" nằm dưới nút Note mới trong sidebar, không phải một mục ở đây.
+  { key: 'today', href: '/today', label: 'Hôm nay' },
   { key: 'inbox', href: '/inbox', label: 'Inbox' },
   { key: 'notes', href: '/notes', label: 'Ghi chú' },
   { key: 'tags', href: '/tags', label: 'Tag' },
@@ -20,8 +20,12 @@ export const NAV: readonly NavItem[] = [
 const under = (pathname: string, base: string) =>
   pathname === base || pathname.startsWith(`${base}/`);
 
-/** `/notes/new` hoặc `/notes/<id>`: màn hình soạn note (tab bar ẩn). */
-export const isEditorRoute = (pathname: string): boolean => /^\/notes\/[^/]+$/.test(pathname);
+/**
+ * Màn hình tập trung một việc (tab bar ẩn, main không chừa chỗ cho tab bar):
+ * soạn note (`/notes/new`, `/notes/<id>`) và chế độ đọc (`/notes/<id>/read`).
+ */
+export const isFocusRoute = (pathname: string): boolean =>
+  /^\/notes\/[^/]+$/.test(pathname) || /^\/notes\/(?!new\/)[^/]+\/read$/.test(pathname);
 
 /**
  * Mục nav đang chọn.
@@ -31,11 +35,13 @@ export const isEditorRoute = (pathname: string): boolean => /^\/notes\/[^/]+$/.t
  */
 export function isNavActive(key: NavKey, pathname: string, tag: string | null = null): boolean {
   switch (key) {
+    case 'today':
+      return under(pathname, '/today');
     case 'inbox':
       return under(pathname, '/inbox');
     case 'notes':
       return (
-        (pathname === '/notes' && !tag) || (isEditorRoute(pathname) && pathname !== '/notes/new')
+        (pathname === '/notes' && !tag) || (isFocusRoute(pathname) && pathname !== '/notes/new')
       );
     case 'tags':
       return under(pathname, '/tags');
@@ -73,7 +79,8 @@ export function pickSidebarTags(
  * Key nằm dưới ['notes','list'] nên mọi mutation note (afterNoteSaved) tự làm mới số đếm.
  */
 export const NAV_COUNT_QUERIES = {
-  notes: { limit: 1 },
+  // Khớp danh sách Ghi chú mặc định: không tính note lưu trữ.
+  notes: { excludeArchived: true, limit: 1 },
   inbox: { status: 'INBOX', limit: 1 },
   trash: { trashed: true, limit: 1 },
 } as const satisfies Record<string, ListNotesQuery>;

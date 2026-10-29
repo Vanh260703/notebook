@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   NEW_DRAFT_KEY,
+  clearAllDrafts,
   clearDraft,
   createDraftWriter,
   draftKey,
@@ -139,5 +140,26 @@ describe('createDraftWriter', () => {
     vi.advanceTimersByTime(1000);
     w.flush();
     expect(calls).toEqual(['a']);
+  });
+});
+
+describe('clearAllDrafts', () => {
+  it('removes every nb:draft:* key and nothing else', () => {
+    const map = new Map([
+      [NEW_DRAFT_KEY, 'a'],
+      [draftKey('x'), 'b'],
+      ['nb:capture-type', 'PERSONAL'],
+      ['theme', 'dark'],
+    ]);
+    const storage = {
+      get length() {
+        return map.size;
+      },
+      key: (i: number) => [...map.keys()][i] ?? null,
+      removeItem: (k: string) => void map.delete(k),
+    };
+    clearAllDrafts(storage);
+    expect([...map.keys()]).toEqual(['nb:capture-type', 'theme']);
+    expect(() => clearAllDrafts(null)).not.toThrow();
   });
 });

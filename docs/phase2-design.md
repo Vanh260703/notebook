@@ -903,3 +903,12 @@ GET /days?from=2026-11-01&to=2026-10-01
    - mục 13: quy tắc ARCHIVED.
 
 **Dependency:** không thêm gì. Outbox tự bọc IndexedDB. Bảng lệnh, lịch và mục lục tự viết trên `Dialog` (base-ui), React và lucide sẵn có. Không cần `@nestjs/schedule`, `idb`, `cmdk`, `date-fns`, `rehype-slug`.
+
+---
+
+## Quyết định đã chốt với người dùng (2026-10-27)
+
+1. **ARCHIVED:** phương án A. Danh sách Ghi chú mặc định ẩn note lưu trữ, có dòng "Đã ẩn N note lưu trữ · Xem". Vẫn hiện trong tìm kiếm, trang Hôm nay và lịch.
+2. **Nút giữa tab bar mobile:** Quick capture. Note mới đầy đủ nằm ở sheet "Thêm", đầu trang Ghi chú, và nút "Mở rộng" trong sheet capture.
+3. **Trang `/`:** chuyển sang `/today`.
+4. Theo đề xuất của thiết kế (người dùng không phản đối): không dùng `@nestjs/schedule` (dùng `setTimeout` nối tiếp); cron không tự xóa tag mồ côi; đăng xuất xóa outbox và nháp localStorage trên máy đó, hỏi lại nếu còn note chưa gửi.

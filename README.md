@@ -82,10 +82,22 @@ pnpm --filter api migration:revert        # lùi migration cuối
 Lưu ý:
 
 - Migration `Init` có phần thêm tay `CREATE EXTENSION unaccent` + hàm `f_unaccent` (IMMUTABLE) ở đầu `up()`, vì cột generated `Note.search` cần hàm này có trước.
+- Migration `SearchV2` có phần thêm tay `CREATE TEXT SEARCH CONFIGURATION public.vn_unaccent` (dùng cho highlight kết quả tìm). TypeORM không theo dõi config này nên `migration:check` không báo; đổi biểu thức cột `search` thì đọc kỹ file sinh ra, phải có `CREATE INDEX "Note_search_idx"`.
 - Không sửa chuỗi `NOTE_SEARCH_EXPRESSION` trong `note.entity.ts` nếu không định sinh migration mới.
 - Tên DB phải là `notebook` ở mọi môi trường (TypeORM lưu biểu thức cột generated trong `typeorm_metadata` theo tên DB).
 - API trong Docker tự chạy migration còn thiếu lúc khởi động (`migrationsRun: true`). Lùi migration trên server:
   `docker compose exec api node node_modules/typeorm/cli.js migration:revert -d dist/database/data-source.js`
+
+## Hành vi chạy nền
+
+- **Dọn thùng rác:** API tự xóa vĩnh viễn note nằm trong thùng rác quá 30 ngày, chạy lần đầu 60 giây sau khi khởi động rồi mỗi giờ (`TrashPurgeService`, không cần cấu hình). Có xóa thì ghi log `TrashPurge`. Không chạy khi `NODE_ENV=test`.
+- **Outbox (web):** note mới được ghi vào IndexedDB `notebook` (store `outbox`) của trình duyệt trước rồi mới gửi. Xem và gửi lại ở đầu trang Inbox. Đăng xuất xóa outbox và nháp `nb:draft:*` trên máy đó.
+
+## Phím tắt (web)
+
+- `Ctrl/Cmd + K`: bảng lệnh (tìm note, chuyển trang, ghi nhanh). `Shift + Enter` trên một note: mở chế độ đọc.
+- `C`: ghi nhanh (khi không đang gõ trong ô nhập).
+- `Ctrl/Cmd + S`: lưu note trong trình soạn.
 
 ## Deploy
 

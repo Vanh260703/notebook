@@ -1,4 +1,9 @@
-import type { Note as NoteDto, NoteListItem, Tag as TagDto } from '@notebook/shared';
+import type {
+  Note as NoteDto,
+  NoteListItem,
+  SearchHighlight,
+  Tag as TagDto,
+} from '@notebook/shared';
 import type { Note } from './note.entity';
 
 /** So sánh theo code point: cùng một thứ tự ở mọi nơi, không phụ thuộc locale. */
@@ -41,7 +46,12 @@ export interface NoteListRow {
   deletedAt: Date | null;
 }
 
-export function toListItem(row: NoteListRow, tags: readonly TagDto[]): NoteListItem {
+/** `highlight` chỉ có khi tìm kiếm (q); không có thì không thêm key. */
+export function toListItem(
+  row: NoteListRow,
+  tags: readonly TagDto[],
+  highlight?: SearchHighlight,
+): NoteListItem {
   return {
     id: row.id,
     title: row.title,
@@ -55,5 +65,6 @@ export function toListItem(row: NoteListRow, tags: readonly TagDto[]): NoteListI
     updatedAt: row.updatedAt.toISOString(),
     deletedAt: row.deletedAt ? row.deletedAt.toISOString() : null,
     tags: toTagDtos(tags),
+    ...(highlight ? { highlight } : {}),
   };
 }

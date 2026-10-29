@@ -34,10 +34,18 @@ function redirectToLogin(): void {
  * Mọi request tới API đi qua đường dẫn tương đối /api/* (Next.js rewrite sang API_URL).
  * Không dùng URL tuyệt đối của API ở frontend.
  */
-export async function apiFetch<T>(
-  path: string,
-  init?: { method?: string; body?: unknown; signal?: AbortSignal },
-): Promise<T> {
+export interface ApiFetchInit {
+  method?: string;
+  body?: unknown;
+  signal?: AbortSignal;
+  /**
+   * Gặp 401 thì tải lại trang login (mặc định true). Outbox truyền false: một lần gửi chạy nền
+   * không được chuyển trang giữa lúc người dùng đang gõ; nó tự báo "phiên đã hết hạn".
+   */
+  redirectOn401?: boolean;
+}
+
+export async function apiFetch<T>(path: string, init?: ApiFetchInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`/api${path}`, {
@@ -70,7 +78,9 @@ export async function apiFetch<T>(
               : `HTTP ${res.status}`,
         };
     // INVALID_PASSWORD là 401 của chính form đăng nhập, không chuyển trang.
-    if (res.status === 401 && body.code !== 'INVALID_PASSWORD') redirectToLogin();
+    if (res.status === 401 && body.code !== 'INVALID_PASSWORD' && init?.redirectOn401 !== false) {
+      redirectToLogin();
+    }
     throw new ApiError(res.status, body);
   }
   return json as T;

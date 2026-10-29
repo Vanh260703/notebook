@@ -8,4 +8,7 @@ export const qk = {
   noteList: (q: ListNotesQuery) => ['notes', 'list', q] as const,
   note: (id: string) => ['notes', 'detail', id] as const,
   tags: ['tags'] as const,
+  /** Số note theo ngày (lịch). Tạo/xóa/khôi phục/đổi entryDate đều làm số đổi. */
+  days: ['days'] as const,
+  dayRange: (from: string, to: string) => ['days', from, to] as const,
 };

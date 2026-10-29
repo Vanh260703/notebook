@@ -5,19 +5,25 @@ import {
   NAV,
   NAV_COUNT_QUERIES,
   formatBadgeCount,
-  isEditorRoute,
+  isFocusRoute,
   isNavActive,
   isTagActive,
   pickSidebarTags,
 } from './nav';
 
 describe('NAV', () => {
-  it('lists Inbox, Ghi chú, Tag, Thùng rác in that order', () => {
-    expect(NAV.map((i) => i.href)).toEqual(['/inbox', '/notes', '/tags', '/trash']);
+  it('lists Hôm nay, Inbox, Ghi chú, Tag, Thùng rác in that order', () => {
+    expect(NAV.map((i) => i.href)).toEqual(['/today', '/inbox', '/notes', '/tags', '/trash']);
   });
 });
 
 describe('isNavActive', () => {
+  it('Hôm nay: /today (with or without ?date)', () => {
+    expect(isNavActive('today', '/today')).toBe(true);
+    expect(isNavActive('today', '/todays')).toBe(false);
+    expect(isNavActive('today', '/notes')).toBe(false);
+  });
+
   it('Inbox: /inbox and below', () => {
     expect(isNavActive('inbox', '/inbox')).toBe(true);
     expect(isNavActive('inbox', '/inbox/x')).toBe(true);
@@ -42,7 +48,7 @@ describe('isNavActive', () => {
   });
 
   it('exactly one main item is active on each list page', () => {
-    for (const path of ['/inbox', '/notes', '/tags', '/trash']) {
+    for (const path of ['/today', '/inbox', '/notes', '/tags', '/trash']) {
       expect(NAV.filter((i) => isNavActive(i.key, path)).map((i) => i.href)).toEqual([path]);
     }
   });
@@ -57,13 +63,21 @@ describe('isTagActive', () => {
   });
 });
 
-describe('isEditorRoute', () => {
-  it('matches /notes/new and /notes/<id> only', () => {
-    expect(isEditorRoute('/notes/new')).toBe(true);
-    expect(isEditorRoute('/notes/abc')).toBe(true);
-    expect(isEditorRoute('/notes')).toBe(false);
-    expect(isEditorRoute('/notes/abc/edit')).toBe(false);
-    expect(isEditorRoute('/tags')).toBe(false);
+describe('isFocusRoute', () => {
+  it('matches the editor (/notes/new, /notes/<id>) and reading mode (/notes/<id>/read)', () => {
+    expect(isFocusRoute('/notes/new')).toBe(true);
+    expect(isFocusRoute('/notes/abc')).toBe(true);
+    expect(isFocusRoute('/notes/abc/read')).toBe(true);
+    expect(isFocusRoute('/notes/new/read')).toBe(false);
+    expect(isFocusRoute('/notes')).toBe(false);
+    expect(isFocusRoute('/notes/abc/edit')).toBe(false);
+    expect(isFocusRoute('/tags')).toBe(false);
+    expect(isFocusRoute('/today')).toBe(false);
+  });
+
+  it('reading mode keeps "Ghi chú" highlighted', () => {
+    expect(isNavActive('notes', '/notes/abc/read')).toBe(true);
+    expect(isNavActive('today', '/notes/abc/read')).toBe(false);
   });
 });
 
@@ -110,5 +124,9 @@ describe('NAV_COUNT_QUERIES', () => {
       expect(q.limit).toBe(1);
       expect(qk.noteList(q).slice(0, qk.noteLists.length)).toEqual([...qk.noteLists]);
     }
+  });
+
+  it('the notes count excludes ARCHIVED, like the default notes list', () => {
+    expect(NAV_COUNT_QUERIES.notes.excludeArchived).toBe(true);
   });
 });

@@ -17,6 +17,7 @@ const useCount = (q: ListNotesQuery) =>
   }).data;
 
 const NO_COUNTS: Record<NavKey, undefined> = {
+  today: undefined,
   inbox: undefined,
   notes: undefined,
   tags: undefined,
@@ -34,7 +35,8 @@ export function useNavCounts(): Record<NavKey, number | undefined> {
   const inbox = useCount(NAV_COUNT_QUERIES.inbox);
   const trash = useCount(NAV_COUNT_QUERIES.trash);
   const tags = useTags()?.length;
-  return hydrated ? { notes, inbox, trash, tags } : NO_COUNTS;
+  // "Hôm nay" không có số trong sidebar (số note của ngày nằm ở đầu trang).
+  return hydrated ? { today: undefined, notes, inbox, trash, tags } : NO_COUNTS;
 }
 
 /** GET /tags, cùng key/staleTime với các chỗ khác. Danh sách tag rỗng (undefined) khi chưa hydrate. */

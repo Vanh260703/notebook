@@ -1,17 +1,24 @@
 'use client';
 
-import type { Note, NoteListItem, NoteListResponse } from '@notebook/shared';
+import {
+  TRASH_RETENTION_DAYS,
+  type Note,
+  type NoteListItem,
+  type NoteListResponse,
+} from '@notebook/shared';
 import { useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { errorMessage, isApiError } from '@/lib/api/client';
 import { deleteNote, deleteNotePermanently, restoreNote, updateNote } from '@/lib/api/notes';
+import { STATUS_LABEL } from '@/lib/labels';
 import { qk } from '@/lib/query-keys';
 
-/** Sau mỗi mutation: cache chi tiết = response, danh sách và tag tải lại. */
+/** Sau mỗi mutation: cache chi tiết = response; danh sách, tag và số note theo ngày tải lại. */
 export function afterNoteSaved(qc: QueryClient, note: Note | null): void {
   if (note) qc.setQueryData(qk.note(note.id), note);
   void qc.invalidateQueries({ queryKey: qk.noteLists });
   void qc.invalidateQueries({ queryKey: qk.tags });
+  void qc.invalidateQueries({ queryKey: qk.days });
 }
 
 type ListSnapshot = [readonly unknown[], NoteListResponse | undefined][];
@@ -92,7 +99,7 @@ export function useDeleteNote(options?: { onDeleted?: (id: string) => void }) {
     onSuccess: (_data, id) => {
       void qc.invalidateQueries({ queryKey: qk.note(id) });
       options?.onDeleted?.(id);
-      toast('Đã chuyển vào thùng rác', {
+      toast(`Đã chuyển vào thùng rác (giữ ${TRASH_RETENTION_DAYS} ngày)`, {
         action: { label: 'Hoàn tác', onClick: () => restore.mutate(id) },
         duration: 8000,
       });
@@ -136,4 +143,99 @@ export function useTogglePin() {
     },
     onSettled: () => void qc.invalidateQueries({ queryKey: qk.noteLists }),
   });
+}
+
+/** Trường sửa được từ Inbox (nút "Đang dùng" và dialog "Sắp xếp"). */
+export interface NoteFields {
+  type?: NoteListItem['type'];
+  status?: NoteListItem['status'];
+  /** Thay toàn bộ danh sách tag. */
+  tags?: string[];
+}
+
+/** Danh sách có key lọc status INBOX (trang Inbox, số đếm Inbox). */
+const isInboxList = (key: readonly unknown[]) => {
+  const q = key[2] as { status?: string } | undefined;
+  return q?.status === 'INBOX';
+};
+
+/**
+ * PATCH vài trường của một note từ danh sách (xử lý Inbox). Optimistic:
+ * - Rời Inbox (status khác INBOX): bỏ note khỏi các danh sách lọc INBOX ngay; danh sách khác tự
+ *   tải lại nhờ afterNoteSaved.
+ * - Đổi loại: cập nhật ngay trong mọi danh sách. Tag: chờ server (cần id tag).
+ * Toast có Hoàn tác (PATCH lại các giá trị cũ bằng version mới). 409: rollback, tải lại, báo.
+ */
+export function useUpdateNoteFields() {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: ({ item, fields }: { item: NoteListItem; fields: NoteFields; undo?: boolean }) =>
+      updateNote(item.id, { version: item.version, ...fields }),
+    onMutate: async ({ item, fields }) => {
+      await qc.cancelQueries({ queryKey: qk.noteLists });
+      const snapshot = qc.getQueriesData<NoteListResponse>({ queryKey: qk.noteLists });
+      const leaving = fields.status !== undefined && fields.status !== 'INBOX';
+      if (leaving) {
+        qc.setQueriesData<NoteListResponse>(
+          { queryKey: qk.noteLists, predicate: (q) => isInboxList(q.queryKey) },
+          (old) => {
+            if (!old) return old;
+            const items = old.items.filter((i) => i.id !== item.id);
+            return { ...old, items, total: old.total - (old.items.length - items.length) };
+          },
+        );
+      }
+      qc.setQueriesData<NoteListResponse>(
+        { queryKey: qk.noteLists },
+        (old) =>
+          old && {
+            ...old,
+            items: old.items.map((i) =>
+              i.id === item.id
+                ? { ...i, type: fields.type ?? i.type, status: fields.status ?? i.status }
+                : i,
+            ),
+          },
+      );
+      return { snapshot };
+    },
+    onError: (e, _vars, ctx) => {
+      rollback(qc, ctx?.snapshot);
+      void qc.invalidateQueries({ queryKey: qk.noteLists });
+      toast.error(
+        isApiError(e, 'VERSION_CONFLICT')
+          ? 'Note đã được sửa ở nơi khác, đã tải lại'
+          : errorMessage(e),
+      );
+    },
+    onSuccess: (note, { item, fields, undo }) => {
+      afterNoteSaved(qc, note);
+      if (undo) {
+        toast.success('Đã hoàn tác');
+        return;
+      }
+      // Hoàn tác: các trường vừa đổi về giá trị cũ, dựa trên version mới nhất.
+      const previous: NoteFields = {};
+      if (fields.type !== undefined) previous.type = item.type;
+      if (fields.status !== undefined) previous.status = item.status;
+      if (fields.tags !== undefined) previous.tags = item.tags.map((t) => t.name);
+      const message =
+        fields.status && fields.status !== item.status
+          ? `Đã chuyển sang ${STATUS_LABEL[fields.status]}`
+          : 'Đã cập nhật note';
+      toast.success(message, {
+        action: {
+          label: 'Hoàn tác',
+          onClick: () =>
+            mutation.mutate({
+              item: { ...item, version: note.version },
+              fields: previous,
+              undo: true,
+            }),
+        },
+        duration: 8000,
+      });
+    },
+  });
+  return mutation;
 }

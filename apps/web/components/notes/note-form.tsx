@@ -14,10 +14,12 @@ import {
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowLeft,
+  BookOpen,
   CalendarDays,
   ChevronDown,
   CircleAlert,
   CircleCheck,
+  CloudOff,
   Eye,
   History,
   LoaderCircle,
@@ -30,7 +32,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { MarkdownEditor } from '@/components/editor/markdown-editor';
 import { MarkdownPreview } from '@/components/editor/markdown-preview';
-import { Button } from '@/components/ui/button';
+import { useOutbox } from '@/components/outbox/outbox-provider';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Segmented, type SegmentedOption } from '@/components/ui/segmented';
 import { GuardedLink, useRegisterUnsavedForm } from '@/components/unsaved-guard';
 import { errorMessage, isApiError } from '@/lib/api/client';
@@ -49,7 +52,7 @@ import {
   writeDraft,
   type StoredDraft,
 } from '@/lib/local-draft';
-import { diffDraft, draftFromNote, hasChanges, type NoteDraft } from '@/lib/note-draft';
+import { diffDraft, draftFromNote, hasChanges, sameDraft, type NoteDraft } from '@/lib/note-draft';
 import { commitTagText } from '@/lib/tag-input';
 import { cn } from '@/lib/utils';
 import { ConflictDialog, TrashedOnSaveDialog } from './conflict-dialog';
@@ -63,6 +66,8 @@ type Props =
       mode: 'create';
       id: string;
       initialEntryDate: string;
+      /** Nội dung ban đầu (từ sheet ghi nhanh "Mở rộng"). */
+      initialDraft?: NoteDraft;
       /** Gọi trước khi đổi URL sang /notes/<id> (lần lưu đầu). */
       onCreated?: (path: string) => void;
     }
@@ -92,6 +97,8 @@ function findRecoveredDraft(props: Props): StoredDraft | null {
 }
 
 const DRAFT_DEBOUNCE_MS = 500;
+
+type SaveOutcome = { kind: 'saved'; note: Note } | { kind: 'queued'; draft: NoteDraft };
 
 const TYPE_OPTIONS: SegmentedOption<NoteType>[] = NOTE_TYPES.map((t) => {
   const { icon: Icon, text } = TYPE_META[t];
@@ -137,7 +144,9 @@ export function NoteForm(props: Props) {
   const [id, setId] = useState(props.mode === 'edit' ? props.note.id : props.id);
   const [base, setBase] = useState<Note | null>(props.mode === 'edit' ? props.note : null);
   const [draft, setDraft] = useState<NoteDraft>(() =>
-    props.mode === 'edit' ? draftFromNote(props.note) : emptyDraft(props.initialEntryDate),
+    props.mode === 'edit'
+      ? draftFromNote(props.note)
+      : (props.initialDraft ?? emptyDraft(props.initialEntryDate)),
   );
   const [recovered, setRecovered] = useState<StoredDraft | null>(() => findRecoveredDraft(props));
   const [tagText, setTagText] = useState('');
@@ -153,9 +162,19 @@ export function NoteForm(props: Props) {
   const [storage] = useState(getDraftStorage);
   const [writer] = useState(() => createDraftWriter(DRAFT_DEBOUNCE_MS));
   const discardedRef = useRef(false);
+  const outbox = useOutbox();
+  /**
+   * Note mới đã nằm trong outbox (IndexedDB) nhưng chưa lên server: bản đã "lưu trên máy".
+   * Không còn coi là chưa lưu (guard và beforeunload không chặn), outbox tự gửi khi có mạng.
+   */
+  const [queuedDraft, setQueuedDraft] = useState<NoteDraft | null>(null);
 
   const readOnly = Boolean(base?.deletedAt);
-  const draftDirty = base ? hasChanges(base, draft) : !isDraftEmpty(draft);
+  const draftDirty = base
+    ? hasChanges(base, draft)
+    : queuedDraft
+      ? !sameDraft(queuedDraft, draft)
+      : !isDraftEmpty(draft);
   const dirty = draftDirty || tagText.trim() !== '';
   const storageKey = base ? draftKey(base.id) : NEW_DRAFT_KEY;
 
@@ -165,6 +184,7 @@ export function NoteForm(props: Props) {
   const onSaved = (note: Note, message?: string) => {
     writer.cancel();
     setBase(note);
+    setQueuedDraft(null);
     setSaveError(null);
     afterNoteSaved(qc, note);
     if (message) toast.success(message);
@@ -203,15 +223,61 @@ export function NoteForm(props: Props) {
     return updateNote(against.id, { version: against.version, ...changes });
   };
 
+  /**
+   * Note mới (chưa có `base`) đi qua outbox: ghi IndexedDB trước, rồi chờ gửi tối đa 8 giây.
+   * - Lên server: như GĐ1 (replaceState, các lần sau là PATCH).
+   * - Lỗi tạm thời/timeout: "Chờ gửi", outbox tự gửi tiếp; khi xong phát `sent` (effect bên dưới).
+   * - Lỗi vĩnh viễn: dòng lỗi như GĐ1, bỏ record khỏi hàng.
+   * Không có outbox (IndexedDB bị chặn): POST thẳng như GĐ1.
+   */
+  const createViaOutbox = async (d: NoteDraft): Promise<SaveOutcome> => {
+    const input = { id, ...d };
+    if (!outbox.available) return { kind: 'saved', note: await createNote(input) };
+    let inQueue: boolean;
+    try {
+      inQueue = await outbox.replace(id, input);
+      if (!inQueue) await outbox.enqueue(input, 'editor');
+    } catch {
+      return { kind: 'saved', note: await createNote(input) };
+    }
+    const res = await outbox.sendNow(id, { timeoutMs: 8000 });
+    if (res.status === 'sent') return { kind: 'saved', note: res.note };
+    if (res.status === 'failed') {
+      await outbox.remove(id);
+      throw new Error(res.error?.message ?? 'Không lưu được');
+    }
+    return { kind: 'queued', draft: d };
+  };
+
   const save = useMutation({
-    mutationFn: async (d: NoteDraft): Promise<Note> => {
-      if (base) return patchAgainst(base, d);
-      return createNote({ id, ...d });
+    mutationFn: async (d: NoteDraft): Promise<SaveOutcome> => {
+      if (base) return { kind: 'saved', note: await patchAgainst(base, d) };
+      return createViaOutbox(d);
     },
     onMutate: () => setSaveError(null),
-    onSuccess: (note) => onSaved(note),
+    onSuccess: (r) => {
+      if (r.kind === 'saved') return onSaved(r.note);
+      writer.cancel();
+      setQueuedDraft(r.draft);
+      // Outbox giờ là nơi giữ dữ liệu: bỏ nháp localStorage để không có hai banner cho một note.
+      clearDraft(storage, NEW_DRAFT_KEY);
+    },
     onError: onSaveError,
   });
+
+  // Note chờ gửi đã lên server (dù form vẫn đang mở): chuyển sang chế độ sửa, lần sau là PATCH.
+  const onSavedRef = useRef(onSaved);
+  useEffect(() => {
+    onSavedRef.current = onSaved;
+  });
+  const waitingForOutbox = queuedDraft !== null && !base;
+  const onOutboxSent = outbox.onSent;
+  useEffect(() => {
+    if (!waitingForOutbox) return;
+    return onOutboxSent((note) => {
+      if (note.id === id) onSavedRef.current(note);
+    });
+  }, [waitingForOutbox, onOutboxSent, id]);
 
   const keepMine = useMutation({
     mutationFn: (current: Note) => patchAgainst(current, draft),
@@ -285,7 +351,7 @@ export function NoteForm(props: Props) {
     writer.cancel();
     clearDraft(storage, storageKey);
     if (props.mode === 'create') clearDraft(storage, NEW_DRAFT_KEY);
-    setDraft(base ? draftFromNote(base) : emptyDraft(draft.entryDate));
+    setDraft(base ? draftFromNote(base) : (queuedDraft ?? emptyDraft(draft.entryDate)));
     setTagText('');
     setTagError(null);
     setRecovered(null);
@@ -448,6 +514,16 @@ export function NoteForm(props: Props) {
       <span aria-hidden className="size-2 shrink-0 rounded-full bg-warning" />
       <span className="truncate font-medium text-warning">Chưa lưu</span>
     </>
+  ) : queuedDraft && !base ? (
+    <>
+      <CloudOff className="size-3.5 shrink-0 text-warning" aria-hidden />
+      <span
+        className="truncate font-medium text-warning"
+        title="Đã lưu trên máy này, sẽ tự gửi khi kết nối lại"
+      >
+        Chờ gửi
+      </span>
+    </>
   ) : base ? (
     <>
       <CircleCheck className="size-3.5 shrink-0 text-success" aria-hidden />
@@ -484,6 +560,16 @@ export function NoteForm(props: Props) {
           >
             <Pin className={cn(draft.pinned && 'fill-current text-primary-ink')} />
           </Button>
+          {base ? (
+            <GuardedLink
+              href={`/notes/${base.id}/read`}
+              aria-label="Chế độ đọc"
+              title="Chế độ đọc"
+              className={buttonVariants({ variant: 'ghost', size: 'icon' })}
+            >
+              <BookOpen />
+            </GuardedLink>
+          ) : null}
           {base ? (
             <Button
               variant="ghost"

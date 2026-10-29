@@ -145,3 +145,20 @@ export function createDraftWriter(delayMs: number) {
     },
   };
 }
+
+/** Xóa mọi nháp `nb:draft:*` (khi đăng xuất: đây có thể là máy công ty). */
+export function clearAllDrafts(
+  storage: Pick<Storage, 'length' | 'key' | 'removeItem'> | null,
+): void {
+  if (!storage) return;
+  try {
+    const keys: string[] = [];
+    for (let i = 0; i < storage.length; i++) {
+      const k = storage.key(i);
+      if (k?.startsWith(DRAFT_PREFIX)) keys.push(k);
+    }
+    keys.forEach((k) => storage.removeItem(k));
+  } catch {
+    // storage bị chặn: không có gì để xóa
+  }
+}

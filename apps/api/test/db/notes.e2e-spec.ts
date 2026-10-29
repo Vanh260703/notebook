@@ -271,10 +271,13 @@ describe('Notes (e2e)', () => {
       expect(p1.items.every((x) => x.tags.length > 0)).toBe(true);
     });
 
-    it('501 NOT_IMPLEMENTED for q, 400 for invalid filters', async () => {
-      const res = await t.agent.get('/notes?q=x').expect(501);
-      expect(apiErrorSchema.parse(res.body).code).toBe('NOT_IMPLEMENTED');
-      await t.agent.get('/notes?q=').expect(200);
+    it('q searches (no more 501), 400 for invalid filters', async () => {
+      const hit = await create({ title: 'xylophone' });
+      await create({ title: 'khác' });
+      expect((await list('?q=xylo')).items.map((x) => x.id)).toEqual([hit.id]);
+      expect((await list('?q=')).total).toBe(2);
+      const bad = await t.agent.get('/notes?excludeArchived=maybe').expect(400);
+      expect(apiErrorSchema.parse(bad.body).code).toBe('VALIDATION_FAILED');
       await t.agent.get('/notes?status=DONE').expect(400);
       await t.agent.get('/notes?limit=1000').expect(400);
       await t.agent.get('/notes?date=2026-13-01').expect(400);

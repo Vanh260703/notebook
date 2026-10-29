@@ -10,4 +10,10 @@ describe('stripMarkdown', () => {
   it('keeps code content but drops fences', () => {
     expect(stripMarkdown('```bash\ndocker ps\n```')).toBe('docker ps');
   });
+
+  it('flattens GFM tables', () => {
+    expect(stripMarkdown('| Bước | Lệnh |\n|---|:---:|\n| 1 | docker compose down |')).toBe(
+      'Bước · Lệnh 1 · docker compose down',
+    );
+  });
 });

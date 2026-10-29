@@ -1,6 +1,6 @@
 import type { Note } from '@notebook/shared';
 import { describe, expect, it } from 'vitest';
-import { diffDraft, draftFromNote, hasChanges } from './note-draft';
+import { diffDraft, draftFromNote, hasChanges, sameDraft } from './note-draft';
 
 const note: Note = {
   id: '3f1c2a9e-8b7d-4c6e-9a5f-1e2d3c4b5a69',
@@ -40,5 +40,14 @@ describe('diffDraft', () => {
   it('returns only changed fields', () => {
     const d = { ...draftFromNote(note), content: 'Mới', pinned: true, tags: ['docker'] };
     expect(diffDraft(note, d)).toEqual({ content: 'Mới', pinned: true, tags: ['docker'] });
+  });
+});
+
+describe('sameDraft', () => {
+  it('compares normalized drafts', () => {
+    const d = draftFromNote(note);
+    expect(sameDraft(d, { ...d, title: ` ${d.title} `, tags: [...d.tags].reverse() })).toBe(true);
+    expect(sameDraft(d, { ...d, content: 'khác' })).toBe(false);
+    expect(sameDraft(d, { ...d, pinned: true })).toBe(false);
   });
 });

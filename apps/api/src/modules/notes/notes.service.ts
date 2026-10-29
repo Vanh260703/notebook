@@ -1,14 +1,16 @@
-import {
-  ConflictException,
-  Injectable,
-  NotFoundException,
-  NotImplementedException,
-} from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import {
+  HIGHLIGHT_END,
+  HIGHLIGHT_START,
   NOTE_EXCERPT_LENGTH,
+  prefixTsquery,
+  searchTerms,
+  type DayCount,
+  type DayCountsResponse,
   type Note as NoteDto,
   type NoteListResponse,
+  type SearchHighlight,
   type Tag as TagDto,
 } from '@notebook/shared';
 import { DataSource, type EntityManager } from 'typeorm';
@@ -17,6 +19,9 @@ import { TagsService } from '../tags/tags.service';
 import { Note } from './note.entity';
 import { type NoteListRow, toListItem, toNoteDto } from './note.mapper';
 import type { CreateNoteDto, ListNotesQueryDto, UpdateNoteDto } from './notes.dto';
+
+/** Query tìm kiếm: bỏ dấu ở phía query bằng cùng hàm với cột search. :tsq là chuỗi từ prefixTsquery. */
+const TSQ = `to_tsquery('simple', f_unaccent(:tsq))`;
 
 const noteNotFound = () =>
   new NotFoundException({
@@ -39,19 +44,20 @@ export class NotesService {
   ) {}
 
   async list(query: ListNotesQueryDto): Promise<NoteListResponse> {
-    if (query.q !== undefined) {
-      throw new NotImplementedException({
-        statusCode: 501,
-        code: 'NOT_IMPLEMENTED',
-        message: 'Tìm kiếm sẽ có ở Giai đoạn 2',
-      });
-    }
-    const { type, status, tag, date, trashed, page, limit } = query;
+    const { q, type, status, tag, date, trashed, excludeArchived, page, limit } = query;
+    // q chỉ có dấu câu/emoji: không có từ nào để tìm, trả rỗng (không 500, không quét bảng).
+    const terms = q === undefined ? null : searchTerms(q);
+    if (terms && !terms.length) return { items: [], page, limit, total: 0, hasMore: false };
+    const tsq = terms ? prefixTsquery(terms) : null;
+    // Mọi từ đều khớp trong tiêu đề (trọng số A): luôn xếp trước khớp nội dung. Chỉ dùng ts_rank
+    // thì bài dài nhắc từ đó nhiều lần sẽ vượt note có từ đó ngay ở tiêu đề (ts_rank cộng dồn).
+    const titleTsq = terms ? prefixTsquery(terms, 'A') : null;
 
     const qb = this.dataSource.getRepository(Note).createQueryBuilder('note');
     if (trashed) qb.withDeleted().andWhere('note.deletedAt IS NOT NULL');
     if (type) qb.andWhere('note.type = :type', { type });
     if (status) qb.andWhere('note.status = :status', { status });
+    if (excludeArchived) qb.andWhere('note.status <> :archived', { archived: 'ARCHIVED' });
     if (date) qb.andWhere('note.entryDate = :date', { date });
     if (tag) {
       qb.andWhere(
@@ -60,9 +66,19 @@ export class NotesService {
         { tag },
       );
     }
+    // Cột search đã quote sẵn (select: false nên không dựa vào property path của TypeORM).
+    if (tsq) qb.andWhere(`"note"."search" @@ ${TSQ}`, { tsq });
+
+    // Đếm TRƯỚC khi thêm order/select theo "rank" (alias chỉ có trong câu lấy dữ liệu).
+    const total = await qb.getCount();
 
     // Thứ tự do server chọn theo chế độ; thêm id để phân trang offset ổn định.
-    if (trashed) {
+    // Có q: độ khớp thắng mọi thứ (kể cả date), không ưu tiên ghim.
+    if (tsq) {
+      qb.orderBy('"titleHit"', 'DESC')
+        .addOrderBy('rank', 'DESC')
+        .addOrderBy('note.updatedAt', 'DESC');
+    } else if (trashed) {
       qb.orderBy('note.deletedAt', 'DESC');
     } else if (date) {
       qb.orderBy('note.createdAt', 'ASC');
@@ -71,10 +87,7 @@ export class NotesService {
     }
     qb.addOrderBy('note.id', 'DESC');
 
-    const total = await qb.getCount();
-    // Không join nên offset/limit an toàn (không dính bẫy skip/take của TypeORM).
-    const rows = await qb
-      .select('note.id', 'id')
+    qb.select('note.id', 'id')
       .addSelect('note.title', 'title')
       .addSelect('note.type', 'type')
       .addSelect('note.status', 'status')
@@ -84,19 +97,49 @@ export class NotesService {
       .addSelect('note.createdAt', 'createdAt')
       .addSelect('note.updatedAt', 'updatedAt')
       .addSelect('note.deletedAt', 'deletedAt')
-      .addSelect(`left("note"."content", ${NOTE_EXCERPT_LENGTH})`, 'excerpt')
+      .addSelect(`left("note"."content", ${NOTE_EXCERPT_LENGTH})`, 'excerpt');
+    // Trọng số mặc định A=1, B=0.4, D=0.1: khớp tiêu đề trước nội dung, khớp nguyên token trước mảnh
+    // tách. Không chuẩn hóa theo độ dài (bài dài không bị dìm).
+    if (tsq) {
+      qb.addSelect(`ts_rank("note"."search", ${TSQ})`, 'rank').addSelect(
+        `"note"."search" @@ to_tsquery('simple', f_unaccent(:titleTsq))`,
+        'titleHit',
+      );
+      qb.setParameter('titleTsq', titleTsq);
+    }
+    // Không join nên offset/limit an toàn (không dính bẫy skip/take của TypeORM).
+    const rows = await qb
       .offset((page - 1) * limit)
       .limit(limit)
       .getRawMany<NoteListRow>();
 
-    const tagsByNote = await this.tagsForNotes(rows.map((r) => r.id));
+    const ids = rows.map((r) => r.id);
+    const [tagsByNote, highlights] = await Promise.all([
+      this.tagsForNotes(ids),
+      tsq ? this.highlights(ids, tsq) : Promise.resolve(null),
+    ]);
     return {
-      items: rows.map((r) => toListItem(r, tagsByNote.get(r.id) ?? [])),
+      items: rows.map((r) => toListItem(r, tagsByNote.get(r.id) ?? [], highlights?.get(r.id))),
       page,
       limit,
       total,
       hasMore: page * limit < total,
     };
+  }
+
+  /**
+   * Số note của từng ngày có note trong [from, to] (cả hai đầu), sắp theo ngày. Không đếm note đã
+   * xóa, có đếm ARCHIVED. Khớp index một phần Note_entryDate_idx (WHERE "deletedAt" IS NULL).
+   */
+  async countByDay(from: string, to: string): Promise<DayCountsResponse> {
+    const items = await this.dataSource.query<DayCount[]>(
+      `SELECT "entryDate" AS "date", count(*)::int AS "count"
+       FROM "Note"
+       WHERE "deletedAt" IS NULL AND "entryDate" BETWEEN $1 AND $2
+       GROUP BY "entryDate" ORDER BY "entryDate"`,
+      [from, to],
+    );
+    return { items };
   }
 
   /** Trả cả note trong thùng rác (deletedAt khác null; UI chỉ cho đọc). */
@@ -210,6 +253,30 @@ export class NotesService {
 
   private exists(id: string): Promise<boolean> {
     return this.dataSource.getRepository(Note).exists({ where: { id }, withDeleted: true });
+  }
+
+  /**
+   * Highlight chạy query riêng, chỉ cho các id của trang hiện tại (không để Postgres có thể chạy
+   * ts_headline cho mọi dòng khớp trước LIMIT). Config vn_unaccent: khớp không dấu/prefix nhưng
+   * giữ chữ gốc có dấu. Mảnh chỉ khớp ở vector D (ví dụ "compose") không được highlight.
+   */
+  private async highlights(ids: string[], tsq: string): Promise<Map<string, SearchHighlight>> {
+    if (!ids.length) return new Map();
+    const sel = `StartSel=${HIGHLIGHT_START}, StopSel=${HIGHLIGHT_END}`;
+    const rows = await this.dataSource.query<{ id: string; title: string; snippet: string }[]>(
+      `SELECT n."id",
+              ts_headline('public.vn_unaccent', n."title", q, $3) AS "title",
+              ts_headline('public.vn_unaccent', n."content", q, $4) AS "snippet"
+       FROM "Note" n CROSS JOIN to_tsquery('simple', f_unaccent($2)) AS q
+       WHERE n."id" = ANY($1::uuid[])`,
+      [
+        ids,
+        tsq,
+        `${sel}, HighlightAll=true`,
+        `${sel}, MaxWords=30, MinWords=12, MaxFragments=2, FragmentDelimiter=" … "`,
+      ],
+    );
+    return new Map(rows.map((r) => [r.id, { title: r.title, snippet: r.snippet }]));
   }
 
   private async tagsForNotes(ids: string[]): Promise<Map<string, TagDto[]>> {

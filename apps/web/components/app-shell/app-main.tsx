@@ -3,14 +3,15 @@
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { isEditorRoute } from './nav';
+import { isFocusRoute } from './nav';
 
 /**
- * Vùng nội dung. Mobile: chừa chỗ cho tab bar dưới đáy, trừ màn hình soạn note (tab bar ẩn).
+ * Vùng nội dung. Mobile: chừa chỗ cho tab bar dưới đáy, trừ màn hình soạn note và chế độ đọc
+ * (tab bar ẩn).
  * `tabIndex={-1}`: đích của skip link. Không có header chung: mỗi trang tự có h1.
  */
 export function AppMain({ children }: { children: ReactNode }) {
-  const editor = isEditorRoute(usePathname());
+  const editor = isFocusRoute(usePathname());
   return (
     <main
       id="main"

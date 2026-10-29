@@ -92,6 +92,7 @@ describe('listNotesQuerySchema', () => {
   it('applies defaults', () => {
     expect(listNotesQuerySchema.parse({})).toEqual({
       trashed: false,
+      excludeArchived: false,
       page: 1,
       limit: LIST_LIMIT_DEFAULT,
     });
@@ -110,6 +111,17 @@ describe('listNotesQuerySchema', () => {
     expect(listNotesQuerySchema.parse({ trashed: 'false' }).trashed).toBe(false);
     expect(listNotesQuerySchema.parse({ trashed: 'true' }).trashed).toBe(true);
     expect(listNotesQuerySchema.safeParse({ trashed: 'maybe' }).success).toBe(false);
+  });
+
+  it('parses excludeArchived (default false)', () => {
+    expect(listNotesQuerySchema.parse({ excludeArchived: 'true' }).excludeArchived).toBe(true);
+    expect(listNotesQuerySchema.parse({}).excludeArchived).toBe(false);
+    expect(listNotesQuerySchema.safeParse({ excludeArchived: 'x' }).success).toBe(false);
+  });
+
+  it('rejects q longer than 200 characters', () => {
+    expect(listNotesQuerySchema.safeParse({ q: 'a'.repeat(200) }).success).toBe(true);
+    expect(listNotesQuerySchema.safeParse({ q: 'a'.repeat(201) }).success).toBe(false);
   });
 
   it('turns empty q into undefined', () => {
@@ -145,6 +157,10 @@ describe('response schemas', () => {
     expect(noteSchema.parse(note)).toEqual(note);
     const { content: _, ...rest } = note;
     expect(noteListItemSchema.parse({ ...rest, excerpt: 'c' }).excerpt).toBe('c');
+    const highlight = { title: 't', snippet: 's' };
+    expect(noteListItemSchema.parse({ ...rest, excerpt: 'c', highlight }).highlight).toEqual(
+      highlight,
+    );
   });
 
   it('parses a version conflict error with current note', () => {
