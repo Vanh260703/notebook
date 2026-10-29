@@ -2,9 +2,10 @@
 
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
-import CodeMirror, { EditorView } from '@uiw/react-codemirror';
+import CodeMirror, { EditorView, keymap, Prec } from '@uiw/react-codemirror';
 import { useTheme } from 'next-themes';
 import { useMemo } from 'react';
+import { toggleCodeBlockCommand } from '@/lib/code-block';
 
 export interface CodeMirrorEditorProps {
   value: string;
@@ -13,6 +14,8 @@ export interface CodeMirrorEditorProps {
   placeholder?: string;
   autoFocus?: boolean;
   'aria-label'?: string;
+  /** Nhận EditorView khi editor tạo xong, để nút ngoài editor gọi được lệnh. */
+  onView?: (view: EditorView) => void;
 }
 
 /** CodeMirror 6 viết Markdown thô, highlight cả code trong code fence. Chỉ chạy phía client. */
@@ -23,10 +26,19 @@ export default function CodeMirrorEditor({
   placeholder,
   autoFocus,
   'aria-label': ariaLabel,
+  onView,
 }: CodeMirrorEditorProps) {
   const { resolvedTheme } = useTheme();
   const extensions = useMemo(
     () => [
+      // Ctrl/Cmd+Shift+C như Slack; thêm Ctrl/Cmd+Alt+Shift+C (phím code block thật của Slack)
+      // vì một số trình duyệt giữ Ctrl+Shift+C để mở DevTools khi chưa vào editor.
+      Prec.highest(
+        keymap.of([
+          { key: 'Mod-Shift-c', run: toggleCodeBlockCommand },
+          { key: 'Mod-Alt-Shift-c', run: toggleCodeBlockCommand },
+        ]),
+      ),
       markdown({ base: markdownLanguage, codeLanguages: languages }),
       EditorView.lineWrapping,
       EditorView.contentAttributes.of({ 'aria-label': ariaLabel ?? 'Nội dung Markdown' }),
@@ -45,6 +57,7 @@ export default function CodeMirrorEditor({
       editable={!readOnly}
       placeholder={placeholder}
       autoFocus={autoFocus}
+      onCreateEditor={onView}
       height="100%"
       basicSetup={{
         lineNumbers: false,

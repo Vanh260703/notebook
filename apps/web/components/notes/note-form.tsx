@@ -12,6 +12,7 @@ import {
   type NoteType,
 } from '@notebook/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { EditorView } from '@uiw/react-codemirror';
 import {
   ArrowLeft,
   BookOpen,
@@ -24,6 +25,7 @@ import {
   History,
   LoaderCircle,
   Pin,
+  SquareCode,
   SquarePen,
   Trash2,
 } from 'lucide-react';
@@ -39,6 +41,7 @@ import { GuardedLink, useRegisterUnsavedForm } from '@/components/unsaved-guard'
 import { errorMessage, isApiError } from '@/lib/api/client';
 import { createNote, restoreNote, updateNote } from '@/lib/api/notes';
 import { copyText } from '@/lib/clipboard';
+import { toggleCodeBlockCommand } from '@/lib/code-block';
 import { formatDateTime, formatSavedAt, formatShortDay } from '@/lib/date';
 import { STATUS_LABEL, TYPE_LABEL } from '@/lib/labels';
 import {
@@ -158,6 +161,7 @@ export function NoteForm(props: Props) {
   const [metaOpen, setMetaOpen] = useState(false);
   const focusTitleRef = useRef(false);
   const titleRef = useRef<HTMLInputElement>(null);
+  const editorViewRef = useRef<EditorView | null>(null);
 
   const [storage] = useState(getDraftStorage);
   const [writer] = useState(() => createDraftWriter(DRAFT_DEBOUNCE_MS));
@@ -728,14 +732,47 @@ export function NoteForm(props: Props) {
             tab !== 'write' && 'hidden lg:flex',
           )}
         >
-          <div aria-hidden className={paneHeader}>
-            Markdown
+          {/* Khác pane Xem trước: hiện cả dưới lg vì chứa nút (trên điện thoại không có phím tắt). */}
+          <div className="flex min-h-9 shrink-0 items-center justify-between gap-2 border-b px-3 py-1">
+            <span
+              aria-hidden
+              className="hidden text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase lg:inline"
+            >
+              Markdown
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="-mr-1.5 ml-auto text-muted-foreground"
+              // Giữ focus và vùng chọn trong editor khi bấm chuột.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                const view = editorViewRef.current;
+                if (!view) return;
+                toggleCodeBlockCommand(view);
+                view.focus();
+              }}
+              aria-keyshortcuts={isMac() ? 'Meta+Shift+C' : 'Control+Shift+C'}
+            >
+              <SquareCode aria-hidden />
+              Code block
+              <kbd
+                className="hidden font-mono text-[0.7rem] opacity-70 sm:inline"
+                suppressHydrationWarning
+              >
+                {isMac() ? '⇧⌘C' : 'Ctrl+Shift+C'}
+              </kbd>
+            </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-auto px-3">
             <MarkdownEditor
               value={draft.content}
               onChange={(v) => set('content', v)}
               placeholder="Viết Markdown…"
+              onView={(view) => {
+                editorViewRef.current = view;
+              }}
             />
           </div>
         </div>
