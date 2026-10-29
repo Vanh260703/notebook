@@ -2,10 +2,14 @@
 
 import { useCommands } from '@/components/command/command-provider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { SHEET_DRAFT_KEY } from '@/lib/capture-draft';
 import { formatShortDay, localDate } from '@/lib/date';
 import { CaptureComposer } from './capture-composer';
 
-/** Sheet "Ghi nhanh" (bottom sheet trên mobile). Mở từ tab bar, sidebar, phím C, bảng lệnh. */
+/**
+ * Sheet "Ghi nhanh" (bottom sheet trên mobile). Mở từ tab bar, sidebar, phím C, bảng lệnh.
+ * Đóng sheet (chạm nền, Esc, ✕) không mất chữ: composer giữ nháp ở SHEET_DRAFT_KEY.
+ */
 export function CaptureDialog() {
   const { capture, closeCapture } = useCommands();
   const other = capture.date && capture.date !== localDate();
@@ -17,7 +21,12 @@ export function CaptureDialog() {
             Ghi nhanh{other ? <> vào {formatShortDay(capture.date!)}</> : null}
           </DialogTitle>
         </DialogHeader>
-        <CaptureComposer date={capture.date} autoFocus onDone={closeCapture} />
+        <CaptureComposer
+          date={capture.date}
+          autoFocus
+          onDone={closeCapture}
+          draftKey={SHEET_DRAFT_KEY}
+        />
       </DialogContent>
     </Dialog>
   );

@@ -1,7 +1,16 @@
 'use client';
 
-import { CalendarDays, Inbox, NotebookText, Plus, type LucideIcon } from 'lucide-react';
+import {
+  CalendarDays,
+  CircleAlert,
+  CloudOff,
+  Inbox,
+  NotebookText,
+  Plus,
+  type LucideIcon,
+} from 'lucide-react';
 import { usePathname } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { useCommands } from '@/components/command/command-provider';
 import { useOutbox } from '@/components/outbox/outbox-provider';
 import { GuardedLink } from '@/components/unsaved-guard';
@@ -14,18 +23,47 @@ import { useNavCounts } from './use-nav-counts';
 /**
  * Điều hướng mobile (< md): [Hôm nay] [Ghi chú] [+ Ghi nhanh] [Inbox] [Thêm], nút giữa trong vùng
  * ngón cái mở sheet ghi nhanh. Note mới đầy đủ, Tag, Thùng rác nằm trong sheet "Thêm".
- * Badge Inbox = note INBOX trên server + note chờ gửi.
+ * Badge Inbox = note INBOX trên server + note chưa gửi. Còn note chưa gửi thì thêm dấu nhỏ ở góc dưới
+ * icon (không chỉ dựa vào màu): CircleAlert đỏ nếu có note gửi lỗi, không thì CloudOff vàng.
  * Ẩn ở màn hình soạn note; ẩn khi bàn phím ảo mở (CSS trong globals.css, theo data-tabbar).
  */
 export function MobileTabBar() {
   const pathname = usePathname();
   const counts = useNavCounts();
   const { openCapture } = useCommands();
-  const { pendingCount } = useOutbox();
+  const { unsentCount, pendingCount, failedCount } = useOutbox();
   if (isFocusRoute(pathname)) return null;
-  const inboxBadge = counts.inbox === undefined ? undefined : counts.inbox + pendingCount;
+  const inboxBadge = counts.inbox === undefined ? undefined : counts.inbox + unsentCount;
+  const OutboxIcon = failedCount > 0 ? CircleAlert : CloudOff;
+  const outboxMark =
+    unsentCount > 0 ? (
+      <span
+        aria-hidden
+        className={cn(
+          'absolute right-1.5 -bottom-1 grid size-3.5 place-items-center rounded-full bg-sidebar',
+          failedCount > 0 ? 'text-destructive' : 'text-warning',
+        )}
+      >
+        <OutboxIcon className="size-3" strokeWidth={2.5} />
+      </span>
+    ) : null;
+  const outboxText = [
+    failedCount > 0 ? `${failedCount} gửi lỗi` : '',
+    pendingCount > 0 ? `${pendingCount} chờ gửi` : '',
+  ]
+    .filter(Boolean)
+    .map((t) => `, ${t}`)
+    .join('');
 
-  const tab = (href: string, label: string, icon: LucideIcon, active: boolean, badge?: number) => (
+  const tab = (
+    href: string,
+    label: string,
+    icon: LucideIcon,
+    active: boolean,
+    badge?: number,
+    mark?: ReactNode,
+    extra?: string,
+  ) => (
     <GuardedLink
       href={href}
       aria-current={active ? 'page' : undefined}
@@ -41,9 +79,11 @@ export function MobileTabBar() {
             {formatBadgeCount(badge)}
           </span>
         ) : null}
+        {mark}
       </span>
       {label}
       {badge ? <span className="sr-only">, {badge} note</span> : null}
+      {extra ? <span className="sr-only">{extra}</span> : null}
     </GuardedLink>
   );
 
@@ -67,13 +107,24 @@ export function MobileTabBar() {
             <Plus className="size-6" aria-hidden />
           </button>
         </li>
-        <li>{tab('/inbox', 'Inbox', Inbox, isNavActive('inbox', pathname), inboxBadge)}</li>
+        <li>
+          {tab(
+            '/inbox',
+            'Inbox',
+            Inbox,
+            isNavActive('inbox', pathname),
+            inboxBadge,
+            outboxMark,
+            outboxText,
+          )}
+        </li>
         <li>
           <MoreSheet
             active={isNavActive('trash', pathname) || isNavActive('tags', pathname)}
             trashCount={counts.trash}
             tagCount={counts.tags}
             pendingCount={pendingCount}
+            failedCount={failedCount}
           />
         </li>
       </ul>

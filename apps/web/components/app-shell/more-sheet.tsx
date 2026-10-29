@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  CircleAlert,
   CloudOff,
   Ellipsis,
   Moon,
@@ -28,18 +29,20 @@ import { TabIcon, tabItemClass } from './tab-item';
 
 /**
  * Ô "Thêm" của tab bar: bottom sheet (Dialog) chứa Note mới (trình soạn đầy đủ), Tag, Thùng rác,
- * số note chờ gửi, đổi giao diện, trạng thái server và Đăng xuất (cuối cùng, tách khỏi nút đổi theme).
+ * số note gửi lỗi / chờ gửi, đổi giao diện, trạng thái server và Đăng xuất (cuối cùng, tách khỏi nút đổi theme).
  */
 export function MoreSheet({
   active,
   trashCount,
   tagCount,
   pendingCount = 0,
+  failedCount = 0,
 }: {
   active: boolean;
   trashCount?: number;
   tagCount?: number;
   pendingCount?: number;
+  failedCount?: number;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -60,6 +63,7 @@ export function MoreSheet({
           trashCount={trashCount}
           tagCount={tagCount}
           pendingCount={pendingCount}
+          failedCount={failedCount}
         />
       </DialogContent>
     </Dialog>
@@ -72,11 +76,13 @@ function MoreSheetBody({
   trashCount,
   tagCount,
   pendingCount,
+  failedCount,
 }: {
   onNavigate: () => void;
   trashCount?: number;
   tagCount?: number;
   pendingCount: number;
+  failedCount: number;
 }) {
   const { resolvedTheme, setTheme } = useTheme();
   return (
@@ -115,6 +121,16 @@ function MoreSheetBody({
           ]}
         />
       </div>
+      {failedCount > 0 ? (
+        <GuardedLink
+          href="/inbox"
+          onNavigate={onNavigate}
+          className="-mx-2 flex h-12 items-center gap-3 rounded-lg px-2 text-base font-medium text-destructive hover:bg-muted"
+        >
+          <CircleAlert className="size-5" aria-hidden />
+          {failedCount} note gửi lỗi
+        </GuardedLink>
+      ) : null}
       {pendingCount > 0 ? (
         <GuardedLink
           href="/inbox"

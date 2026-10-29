@@ -9,7 +9,7 @@ import { EmptyState } from '@/components/empty-state';
 import { NoteEditorSkeleton } from '@/components/notes/note-editor-skeleton';
 import { TagChip, TypeLabel } from '@/components/notes/note-meta';
 import { QueryError } from '@/components/query-error';
-import { TocAside, TocDetails, useActiveHeading, useToc } from '@/components/reading/toc';
+import { TocAside, TocSheet, useActiveHeading, useToc } from '@/components/reading/toc';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { GuardedLink } from '@/components/unsaved-guard';
 import { isApiError } from '@/lib/api/client';
@@ -46,13 +46,17 @@ export function ReadingView({ id }: { id: string }) {
         Quay lại
       </Button>
       {data ? (
-        <GuardedLink
-          href={`/notes/${id}`}
-          className={buttonVariants({ variant: 'outline', size: 'sm', className: 'ml-auto' })}
-        >
-          <SquarePen aria-hidden />
-          Sửa
-        </GuardedLink>
+        <div className="ml-auto flex items-center gap-2">
+          {/* Dưới xl: mục lục trên thanh dính, mở lại được ở giữa bài. */}
+          {tocIds.length ? <TocSheet items={toc} active={active} /> : null}
+          <GuardedLink
+            href={`/notes/${id}`}
+            className={buttonVariants({ variant: 'outline', size: 'sm' })}
+          >
+            <SquarePen aria-hidden />
+            Sửa
+          </GuardedLink>
+        </div>
       ) : null}
     </div>
   );
@@ -150,7 +154,6 @@ export function ReadingView({ id }: { id: string }) {
               ) : null}
             </div>
           </header>
-          {toc.length >= 2 ? <TocDetails items={toc} /> : null}
           <hr className="border-border" />
           <MarkdownPreview content={data.content} variant="reading" />
         </article>

@@ -28,7 +28,7 @@ import { Highlighted } from '@/components/notes/highlighted';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useGuardedRouter } from '@/components/unsaved-guard';
 import { listNotes } from '@/lib/api/notes';
-import { matchCommand, moveActive } from '@/lib/command';
+import { moveActive, visibleCommands } from '@/lib/command';
 import { isImeComposing } from '@/lib/ime';
 import { stripMarkdown } from '@/lib/markdown';
 import { qk } from '@/lib/query-keys';
@@ -65,12 +65,17 @@ interface CommandDef {
   keywords: string[];
   icon: LucideIcon;
   hint?: string;
+  /** Hiện cả khi ô trống (các lệnh khác chỉ hiện khi gõ khớp). */
+  pinned?: boolean;
   run: Run;
 }
 
 /**
  * Bảng lệnh Ctrl/Cmd+K: lệnh + tìm note. Pattern ARIA combobox (input role="combobox" +
  * listbox, mục đang chọn qua aria-activedescendant; focus luôn ở ô nhập). Không dùng cmdk.
+ * Ô trống: nhóm "Gần đây" trước, sau đó vài lệnh hay dùng; lệnh điều hướng chỉ hiện khi gõ khớp.
+ * Listbox chỉ chứa group/option; dòng "không có kết quả", lỗi và vùng thông báo số kết quả
+ * (luôn render sẵn để trình đọc màn hình đọc được) nằm ngoài listbox.
  * Điều hướng qua useGuardedRouter: vẫn hỏi khi editor còn thay đổi chưa lưu.
  */
 export function CommandPalette() {
@@ -126,6 +131,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
       keywords: ['capture', 'quick', 'nhanh', 'inbox'],
       icon: Zap,
       hint: 'C',
+      pinned: true,
       run: () => openCapture(),
     },
     {
@@ -133,6 +139,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
       label: 'Note mới',
       keywords: ['tạo', 'viết', 'new'],
       icon: Plus,
+      pinned: true,
       run: () => go('/notes/new'),
     },
     {
@@ -163,6 +170,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
       label: resolvedTheme === 'dark' ? 'Đổi sang giao diện sáng' : 'Đổi sang giao diện tối',
       keywords: ['giao diện', 'theme', 'sáng', 'tối', 'dark', 'light'],
       icon: Palette,
+      pinned: true,
       run: () => {
         setTheme(resolvedTheme === 'dark' ? 'light' : 'dark');
         onClose();
@@ -212,16 +220,24 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
     };
   };
 
-  const commandItems: Item[] = commands
-    .filter((c) => matchCommand([c.label, ...c.keywords], query))
-    .map((c) => ({ id: `cmd-${c.id}`, icon: c.icon, label: c.label, hint: c.hint, run: c.run }));
+  const commandItems: Item[] = visibleCommands(commands, query).map((c) => ({
+    id: `cmd-${c.id}`,
+    icon: c.icon,
+    label: c.label,
+    hint: c.hint,
+    run: c.run,
+  }));
+  const commandGroup: Group | null = commandItems.length
+    ? { id: 'cmd', label: 'Lệnh', items: commandItems }
+    : null;
 
   const groups: Group[] = [];
-  if (commandItems.length) groups.push({ id: 'cmd', label: 'Lệnh', items: commandItems });
   if (query === '') {
     const items = (recent.data?.items ?? []).map(noteItem);
     if (items.length) groups.push({ id: 'recent', label: 'Gần đây', items });
+    if (commandGroup) groups.push(commandGroup);
   } else {
+    if (commandGroup) groups.push(commandGroup);
     const items = terms.length ? (found.data?.items ?? []).map(noteItem) : [];
     groups.push({
       id: 'notes',
@@ -265,6 +281,9 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
   };
 
   const searching = terms.length > 0 && found.isFetching;
+  const searchDone = terms.length > 0 && found.isSuccess && !found.isFetching;
+  const resultCount = found.data?.items.length ?? 0;
+  const noResults = searchDone && resultCount === 0;
 
   return (
     <>
@@ -355,17 +374,20 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
             })}
           </div>
         ))}
-        {terms.length > 0 && found.isSuccess && !found.data.items.length && !found.isFetching ? (
-          <p className="px-2 py-2 text-sm text-muted-foreground" role="status">
-            Không có note nào khớp.
-          </p>
-        ) : null}
-        {found.isError ? (
-          <p className="px-2 py-2 text-sm text-destructive" role="alert">
-            Không tìm được: server có thể đang tắt.
-          </p>
-        ) : null}
       </div>
+      {/* Ngoài listbox (listbox chỉ được chứa group/option). Vùng status render sẵn từ đầu, chỉ
+          đổi chữ: live region mount cùng lúc với nội dung thường không được đọc. */}
+      <p role="status" className="sr-only">
+        {searchDone ? (resultCount ? `${resultCount} note khớp` : 'Không có note nào khớp') : ''}
+      </p>
+      {noResults ? (
+        <p className="px-4 pb-3 text-sm text-muted-foreground">Không có note nào khớp.</p>
+      ) : null}
+      {found.isError ? (
+        <p className="px-4 pb-3 text-sm text-destructive" role="alert">
+          Không tìm được: server có thể đang tắt.
+        </p>
+      ) : null}
       <div className="flex gap-3 border-t bg-muted/50 px-4 py-2 text-xs text-muted-foreground pointer-coarse:hidden">
         <span>
           <kbd className="font-mono">↑↓</kbd> chọn

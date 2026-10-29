@@ -21,6 +21,17 @@ export function matchCommand(texts: readonly string[], query: string): boolean {
   return words.every((w) => hay.some((h) => h.startsWith(w)));
 }
 
+/**
+ * Lệnh hiện trong bảng lệnh. Ô trống: chỉ các lệnh `pinned` (Ghi nhanh, Note mới, Đổi giao diện),
+ * vì lệnh điều hướng đã có ở sidebar/tab bar và đẩy nhóm "Gần đây" xuống khuất. Có chữ: mọi lệnh khớp.
+ */
+export function visibleCommands<
+  T extends { label: string; keywords: readonly string[]; pinned?: boolean },
+>(commands: readonly T[], query: string): T[] {
+  if (query.trim() === '') return commands.filter((c) => c.pinned);
+  return commands.filter((c) => matchCommand([c.label, ...c.keywords], query));
+}
+
 /** Mục đang chọn sau khi bấm ↑/↓ (vòng quanh). `count` 0 thì -1. */
 export function moveActive(index: number, delta: number, count: number): number {
   if (count <= 0) return -1;

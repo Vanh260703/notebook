@@ -107,6 +107,8 @@ export function MonthCalendar({
                         // Ngày ngoài tháng: chữ muted (vẫn đủ 4.5:1, không làm mờ thêm).
                         outside ? 'text-muted-foreground' : 'text-foreground',
                         isToday && 'font-bold text-primary-ink',
+                        // Hôm nay không chỉ khác màu: thêm viền khi không được chọn.
+                        isToday && !isSelected && 'ring-1 ring-primary-ink/60 ring-inset',
                         isSelected &&
                           'bg-primary font-semibold text-primary-foreground hover:bg-primary-hover',
                       )}

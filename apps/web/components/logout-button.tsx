@@ -17,6 +17,7 @@ import {
 import { useGuardedAction } from '@/components/unsaved-guard';
 import { errorMessage } from '@/lib/api/client';
 import { logout } from '@/lib/api/auth';
+import { clearCaptureDrafts } from '@/lib/capture-draft';
 import { CAPTURE_HANDOFF_KEY, getSessionStorage } from '@/lib/capture-handoff';
 import { clearAllDrafts, clearDraft } from '@/lib/local-draft';
 import { cn } from '@/lib/utils';
@@ -40,6 +41,7 @@ export function LogoutButton({ className }: { className?: string }) {
       await outbox.clear().catch(() => undefined);
       try {
         clearAllDrafts(window.localStorage);
+        clearCaptureDrafts(window.localStorage);
       } catch {
         // localStorage bị chặn: không có nháp nào
       }
@@ -53,7 +55,7 @@ export function LogoutButton({ className }: { className?: string }) {
 
   const start = () =>
     guarded(() => {
-      if (outbox.pendingCount > 0) setConfirm(true);
+      if (outbox.unsentCount > 0) setConfirm(true);
       else out.mutate();
     });
 
@@ -72,7 +74,7 @@ export function LogoutButton({ className }: { className?: string }) {
       <Dialog open={confirm} onOpenChange={setConfirm}>
         <DialogContent showCloseButton={false} initialFocus={stayRef}>
           <DialogHeader>
-            <DialogTitle>Còn {outbox.pendingCount} note chưa gửi lên server</DialogTitle>
+            <DialogTitle>Còn {outbox.unsentCount} note chưa gửi lên server</DialogTitle>
             <DialogDescription>
               Đăng xuất sẽ xóa chúng khỏi máy này. Muốn giữ thì ở lại và đợi có mạng (xem ở Inbox).
             </DialogDescription>

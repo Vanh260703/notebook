@@ -27,6 +27,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { GuardedLink } from '@/components/unsaved-guard';
 import { listNotes } from '@/lib/api/notes';
 import { addDays, isValidYmd } from '@/lib/calendar';
+import { INLINE_DRAFT_KEY } from '@/lib/capture-draft';
 import { formatDayTitle, formatLongDay } from '@/lib/date';
 import { pageCount } from '@/lib/list-params';
 import { qk } from '@/lib/query-keys';
@@ -111,7 +112,11 @@ function TodayContent({ today }: { today: string }) {
       href={`/notes/${note.id}/read`}
       aria-label={`Đọc ${note.title || 'note không có tiêu đề'}`}
       title="Chế độ đọc"
-      className={buttonVariants({ variant: 'ghost', size: 'icon-sm' })}
+      // Màn cảm ứng: 44px (icon-sm chỉ có 40px).
+      className={cn(
+        buttonVariants({ variant: 'ghost', size: 'icon-sm' }),
+        'pointer-coarse:size-11',
+      )}
     >
       <BookOpen />
     </GuardedLink>
@@ -196,11 +201,12 @@ function TodayContent({ today }: { today: string }) {
         </div>
 
         {/* Ghi nhanh vào ngày đang xem. Desktop: ô nhập ngay trong trang. Mobile: nút trông như ô
-            nhập, mở sheet (bàn phím không bật lên ngay khi vừa mở trang). */}
+            nhập, mở sheet (bàn phím không bật lên ngay khi vừa mở trang).
+            Không có `key={date}`: đổi ngày trên lịch không xóa chữ đang gõ (ngày chỉ đọc lúc lưu). */}
         <div className="hidden rounded-xl border bg-card p-3 shadow-elev-1 lg:block">
           <CaptureComposer
-            key={date}
             date={date}
+            draftKey={INLINE_DRAFT_KEY}
             placeholder={isToday ? 'Ghi nhanh vào hôm nay…' : 'Ghi nhanh vào ngày này…'}
           />
         </div>

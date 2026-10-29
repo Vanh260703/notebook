@@ -3,6 +3,7 @@
 import type { TagWithCount } from '@notebook/shared';
 import {
   CalendarDays,
+  CircleAlert,
   CloudOff,
   Hash,
   Inbox,
@@ -93,7 +94,7 @@ function SidebarBodyWithParams({ pathname }: { pathname: string }) {
 
 function SidebarBody({ pathname, tag }: { pathname: string; tag: string | null }) {
   const counts = useNavCounts();
-  const { pendingCount } = useOutbox();
+  const { unsentCount } = useOutbox();
   const tags = useTags();
   return (
     <>
@@ -108,7 +109,7 @@ function SidebarBody({ pathname, tag }: { pathname: string; tag: string | null }
                 active={isNavActive(item.key, pathname, tag)}
                 count={
                   item.key === 'inbox' && counts.inbox !== undefined
-                    ? counts.inbox + pendingCount
+                    ? counts.inbox + unsentCount
                     : counts[item.key]
                 }
                 unit={item.key === 'tags' ? 'tag' : 'note'}
@@ -281,18 +282,30 @@ function CaptureButton() {
   );
 }
 
-/** "N note chờ gửi" (chỉ khi N > 0), dẫn tới Inbox nơi có danh sách chờ gửi. */
+/**
+ * Note chưa lên server, dẫn tới Inbox nơi có danh sách: "N note gửi lỗi" (đỏ, cần xử lý tay)
+ * đứng trước "N note chờ gửi" (vàng, tự gửi lại). Chỉ hiện dòng có N > 0.
+ */
 function PendingLink() {
-  const { pendingCount } = useOutbox();
+  const { pendingCount, failedCount } = useOutbox();
   const hydrated = useHydrated();
-  if (!hydrated || pendingCount === 0) return null;
+  if (!hydrated || pendingCount + failedCount === 0) return null;
+  const link =
+    'mb-1 inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-xs font-medium hover:underline pointer-coarse:py-2';
   return (
-    <GuardedLink
-      href="/inbox"
-      className="mb-1 inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-xs font-medium text-warning hover:underline pointer-coarse:py-2"
-    >
-      <CloudOff className="size-3.5" aria-hidden />
-      {pendingCount} note chờ gửi
-    </GuardedLink>
+    <div className="flex flex-col items-start">
+      {failedCount > 0 ? (
+        <GuardedLink href="/inbox" className={cn(link, 'text-destructive')}>
+          <CircleAlert className="size-3.5" aria-hidden />
+          {failedCount} note gửi lỗi
+        </GuardedLink>
+      ) : null}
+      {pendingCount > 0 ? (
+        <GuardedLink href="/inbox" className={cn(link, 'text-warning')}>
+          <CloudOff className="size-3.5" aria-hidden />
+          {pendingCount} note chờ gửi
+        </GuardedLink>
+      ) : null}
+    </div>
   );
 }

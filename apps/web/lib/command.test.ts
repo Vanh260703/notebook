@@ -5,6 +5,7 @@ import {
   isTypingTarget,
   matchCommand,
   moveActive,
+  visibleCommands,
   shortcutLabel,
 } from './command';
 
@@ -57,5 +58,29 @@ describe('shortcut helpers', () => {
     expect(isTypingTarget({ tagName: 'DIV', isContentEditable: true })).toBe(true);
     expect(isTypingTarget({ tagName: 'BUTTON' })).toBe(false);
     expect(isTypingTarget(null)).toBe(false);
+  });
+});
+
+describe('visibleCommands', () => {
+  const cmds = [
+    { id: 'capture', label: 'Ghi nhanh', keywords: ['capture'], pinned: true },
+    { id: 'new', label: 'Note mới', keywords: ['tạo'], pinned: true },
+    { id: 'today', label: 'Hôm nay', keywords: ['lịch'] },
+    { id: 'inbox', label: 'Inbox', keywords: [] },
+    { id: 'theme', label: 'Đổi sang giao diện sáng', keywords: ['theme'], pinned: true },
+  ];
+  const ids = (q: string) => visibleCommands(cmds, q).map((c) => c.id);
+
+  it('empty query shows only pinned commands (navigation lives in the sidebar)', () => {
+    expect(ids('')).toEqual(['capture', 'new', 'theme']);
+    expect(ids('   ')).toEqual(['capture', 'new', 'theme']);
+  });
+
+  it('typing shows every matching command, pinned or not', () => {
+    expect(ids('hom')).toEqual(['today']);
+    expect(ids('lich')).toEqual(['today']);
+    expect(ids('inb')).toEqual(['inbox']);
+    expect(ids('ghi')).toEqual(['capture']);
+    expect(ids('zzz')).toEqual([]);
   });
 });

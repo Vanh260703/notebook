@@ -54,6 +54,8 @@ export function WeekStrip({
                 className={cn(
                   'flex h-14 w-full flex-col items-center justify-center gap-0.5 rounded-xl text-muted-foreground transition-colors hover:bg-muted',
                   isToday && 'text-primary-ink',
+                  // Hôm nay không chỉ khác màu: thêm viền (khi không được chọn) và chữ đậm.
+                  isToday && !isSelected && 'ring-1 ring-primary-ink/60 ring-inset',
                   isSelected && 'bg-primary text-primary-foreground hover:bg-primary-hover',
                 )}
               >
@@ -61,6 +63,7 @@ export function WeekStrip({
                 <span
                   className={cn(
                     'text-base leading-5 font-semibold tabular-nums',
+                    isToday && 'font-bold',
                     !isSelected && !isToday && 'text-foreground',
                   )}
                 >

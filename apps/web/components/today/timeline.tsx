@@ -3,7 +3,7 @@
 import type { NoteListItem, NoteType } from '@notebook/shared';
 import { CircleAlert, CloudOff } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { StatusChip, TagChip, TYPE_META } from '@/components/notes/note-meta';
+import { StatusChip, TagChip, TYPE_META, TypeLabel } from '@/components/notes/note-meta';
 import { GuardedLink } from '@/components/unsaved-guard';
 import { formatDateTime, formatTime, localDate } from '@/lib/date';
 import { stripMarkdown } from '@/lib/markdown';
@@ -71,7 +71,7 @@ export function Timeline({
               {formatTime(created)}
             </time>
             <div className={cn('relative pl-5', !last && 'pb-3')}>
-              {/* Đường dọc nối các chấm + chấm màu theo loại (trang trí). */}
+              {/* Đường dọc nối các chấm + chấm màu theo loại (trang trí; loại có chữ ở dòng meta). */}
               {!last ? (
                 <span aria-hidden className="absolute top-5 bottom-0 left-[5px] w-px bg-border" />
               ) : null}
@@ -118,26 +118,30 @@ function NoteCard({
         note.status === 'ARCHIVED' && 'bg-card/60 shadow-none',
       )}
     >
-      <div className="flex items-start gap-2">
-        <h2 className="min-w-0 flex-1 text-[0.9375rem] leading-snug font-semibold break-words md:text-base">
-          <GuardedLink
-            href={`/notes/${note.id}`}
-            data-note-link={note.id}
-            className="after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:outline-none"
-          >
-            {note.title || <span className="text-muted-foreground">Không có tiêu đề</span>}
-          </GuardedLink>
-        </h2>
-        {actions ? (
-          <div className="relative z-10 -mt-1 -mr-1 flex shrink-0 gap-1">{actions}</div>
-        ) : null}
-      </div>
+      <h2
+        className={cn(
+          'text-[0.9375rem] leading-snug font-semibold break-words md:text-base',
+          actions && 'pr-8 pointer-coarse:pr-10',
+        )}
+      >
+        <GuardedLink
+          href={`/notes/${note.id}`}
+          data-note-link={note.id}
+          className="after:absolute after:inset-0 after:rounded-xl after:content-[''] focus-visible:outline-none"
+        >
+          {note.title || <span className="text-muted-foreground">Không có tiêu đề</span>}
+        </GuardedLink>
+      </h2>
+      {/* Nút (ví dụ "Đọc") nằm ngoài luồng: tiêu đề một dòng không bị nút 44px đẩy đoạn trích
+          xuống. Đặt sau h2 để thứ tự đọc/Tab vẫn là tên note trước. */}
+      {actions ? <div className="absolute top-2 right-2 z-10 flex gap-1">{actions}</div> : null}
       {excerpt ? (
         <p className="mt-1 line-clamp-3 text-sm leading-relaxed break-words text-muted-foreground">
           {excerpt}
         </p>
       ) : null}
       <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
+        <TypeLabel type={note.type} />
         <StatusChip status={note.status} />
         {note.tags.slice(0, 3).map((t) => (
           <TagChip key={t.id} name={t.name} />
@@ -178,15 +182,20 @@ function PendingCard({ entry }: { entry: PendingEntry }) {
           {stripMarkdown(entry.content)}
         </p>
       ) : null}
-      <p
-        className={cn(
-          'mt-2 inline-flex items-center gap-1 text-xs font-medium',
-          entry.failed ? 'text-destructive' : 'text-warning',
-        )}
-      >
-        <Icon className="size-3.5" aria-hidden />
-        {entry.failed ? 'Gửi lỗi, xem ở Inbox' : 'Chờ gửi'}
-      </p>
+      {entry.failed ? (
+        <GuardedLink
+          href="/inbox"
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-destructive underline-offset-4 hover:underline pointer-coarse:py-2"
+        >
+          <Icon className="size-3.5" aria-hidden />
+          Gửi lỗi, xem ở Inbox
+        </GuardedLink>
+      ) : (
+        <p className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-warning">
+          <Icon className="size-3.5" aria-hidden />
+          Chờ gửi
+        </p>
+      )}
     </article>
   );
 }

@@ -10,6 +10,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
+import { toast } from 'sonner';
 import { afterNoteSaved } from '@/components/notes/use-note-actions';
 import { createNote, updateNote } from '@/lib/api/notes';
 import { createIdbStore } from '@/lib/outbox/idb-store';
@@ -19,6 +20,7 @@ import {
   type OutboxSnapshot,
   type SendResult,
 } from '@/lib/outbox/outbox';
+import { countOutbox, withSentNotice } from '@/lib/outbox/sent-notice';
 import type { OutboxRecord, OutboxSource } from '@/lib/outbox/types';
 import { qk } from '@/lib/query-keys';
 
@@ -41,7 +43,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
     const store = createIdbStore();
     if (!store) return;
     const channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(CHANNEL);
-    const ob = createOutbox({
+    const base = createOutbox({
       store,
       // redirectOn401: false: gửi nền gặp 401 không được chuyển trang giữa lúc đang gõ.
       api: {
@@ -60,6 +62,7 @@ export function OutboxProvider({ children }: { children: ReactNode }) {
       },
       onLocalChange: () => channel?.postMessage('changed'),
     });
+    const ob = withSentNotice(base, (n) => toast.success(`Đã gửi ${n} note chờ lên server`));
     if (channel) channel.onmessage = () => void ob.load();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- outbox chỉ tạo được ở client (IndexedDB).
     setOutbox(ob);
@@ -90,8 +93,12 @@ export interface UseOutbox {
   /** Outbox sẵn sàng (IndexedDB có). false: nơi gọi gửi thẳng như GĐ1. */
   available: boolean;
   records: readonly OutboxRecord[];
-  /** Số note chưa lên server (kể cả gửi lỗi). */
+  /** Số note chưa lên server (chờ gửi + gửi lỗi): badge Inbox, hỏi lại khi đăng xuất. */
+  unsentCount: number;
+  /** Số note outbox đang tự gửi lại (state pending). */
   pendingCount: number;
+  /** Số note gửi lỗi vĩnh viễn, cần xử lý tay ở Inbox. */
+  failedCount: number;
   authRequired: boolean;
   enqueue: (input: CreateNoteInput, source: OutboxSource) => Promise<OutboxRecord>;
   replace: (id: string, input: CreateNoteInput) => Promise<boolean>;
@@ -111,10 +118,13 @@ export function useOutbox(): UseOutbox {
     ob?.getSnapshot ?? (() => EMPTY),
     () => EMPTY,
   );
+  const counts = countOutbox(snap.records);
   return {
     available: ob !== null,
     records: snap.records,
-    pendingCount: snap.records.length,
+    unsentCount: counts.unsent,
+    pendingCount: counts.pending,
+    failedCount: counts.failed,
     authRequired: snap.authRequired,
     enqueue: ob ? ob.enqueue : unavailable,
     replace: ob ? ob.replace : unavailable,

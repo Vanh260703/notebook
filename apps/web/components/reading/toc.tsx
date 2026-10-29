@@ -1,7 +1,15 @@
 'use client';
 
 import { ListTree } from 'lucide-react';
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState, type MouseEvent, type RefObject } from 'react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 
 export interface TocItem {
@@ -57,7 +65,16 @@ export function useActiveHeading(ids: readonly string[]): string | null {
 
 const indent: Record<number, string> = { 2: '', 3: 'pl-3', 4: 'pl-6' };
 
-function TocList({ items, active }: { items: TocItem[]; active?: string | null }) {
+function TocList({
+  items,
+  active,
+  onPick,
+}: {
+  items: TocItem[];
+  active?: string | null;
+  /** Có thì bấm một mục gọi hàm này thay vì đi theo link hash (sheet: đóng rồi mới cuộn). */
+  onPick?: (id: string, e: MouseEvent<HTMLAnchorElement>) => void;
+}) {
   return (
     <ul className="flex flex-col gap-0.5 text-sm">
       {items.map((it) => (
@@ -66,6 +83,7 @@ function TocList({ items, active }: { items: TocItem[]; active?: string | null }
           <a
             href={`#${it.id}`}
             aria-current={active === it.id ? 'location' : undefined}
+            onClick={onPick ? (e) => onPick(it.id, e) : undefined}
             className={cn(
               'block rounded-md px-2 py-1 leading-snug text-muted-foreground hover:bg-muted hover:text-foreground pointer-coarse:py-2',
               active === it.id && 'font-medium text-primary-ink',
@@ -79,18 +97,58 @@ function TocList({ items, active }: { items: TocItem[]; active?: string | null }
   );
 }
 
-/** Mục lục dạng thu gọn (dưới xl), ngay dưới dòng meta. */
-export function TocDetails({ items }: { items: TocItem[] }) {
+/**
+ * Nút "Mục lục" trên thanh dính (dưới xl): mở bottom sheet chứa mục lục, mục đang đọc được đánh dấu.
+ * Mở lại được ở bất cứ đâu trong bài. Bấm một mục: đóng sheet, xong animation (khóa cuộn đã gỡ) mới
+ * đi tới heading bằng hash, như link mục lục thường (cuộn mượt, Back quay lại, scroll-mt của heading).
+ */
+export function TocSheet({ items, active }: { items: TocItem[]; active: string | null }) {
+  const [open, setOpen] = useState(false);
+  const target = useRef<string | null>(null);
   return (
-    <details className="group rounded-xl border bg-card px-3 py-2 shadow-elev-1 xl:hidden">
-      <summary className="flex cursor-pointer items-center gap-2 py-1 text-sm font-medium pointer-coarse:py-2">
-        <ListTree className="size-4 text-muted-foreground" aria-hidden />
-        Mục lục ({items.length})
-      </summary>
-      <nav aria-label="Mục lục" className="mt-1 pb-1">
-        <TocList items={items} />
-      </nav>
-    </details>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (o) target.current = null;
+        setOpen(o);
+      }}
+      onOpenChangeComplete={(o) => {
+        const id = target.current;
+        if (o || !id) return;
+        target.current = null;
+        // Hash không đổi (chọn lại cùng mục) thì trình duyệt không cuộn: tự cuộn.
+        if (window.location.hash === `#${id}`) document.getElementById(id)?.scrollIntoView();
+        else window.location.hash = id;
+      }}
+    >
+      <DialogTrigger
+        render={<Button variant="ghost" size="sm" className="xl:hidden" />}
+        aria-haspopup="dialog"
+      >
+        <ListTree aria-hidden />
+        Mục lục
+      </DialogTrigger>
+      <DialogContent
+        className="pb-[calc(1.25rem+env(safe-area-inset-bottom))]"
+        // Chọn một mục: focus không quay về nút (Tab tiếp theo đi từ heading vừa tới).
+        finalFocus={() => target.current === null}
+      >
+        <DialogHeader>
+          <DialogTitle>Mục lục</DialogTitle>
+        </DialogHeader>
+        <nav aria-label="Mục lục" className="-mx-2">
+          <TocList
+            items={items}
+            active={active}
+            onPick={(id, e) => {
+              e.preventDefault();
+              target.current = id;
+              setOpen(false);
+            }}
+          />
+        </nav>
+      </DialogContent>
+    </Dialog>
   );
 }
 

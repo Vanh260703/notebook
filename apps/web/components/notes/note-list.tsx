@@ -141,6 +141,8 @@ export function NoteList({
           'has-[[data-note-link]:focus-visible]:outline-2 has-[[data-note-link]:focus-visible]:outline-offset-2 has-[[data-note-link]:focus-visible]:outline-ring',
           'animate-in fill-mode-both duration-200 fade-in-0 slide-in-from-bottom-1 [animation-delay:calc(var(--i)*30ms)] motion-reduce:animate-none',
           'pointer-coarse:p-3.5',
+          // Inbox dưới md: hàng nút xuống dưới, cột chữ có đủ bề ngang.
+          variant === 'inbox' && 'max-md:flex-col',
           archived && 'bg-card/60 shadow-none',
         )}
       >
@@ -235,7 +237,12 @@ export function NoteList({
             </span>
           </div>
         </div>
-        <div className="relative z-10 -mt-1 -mr-1 flex shrink-0 items-start gap-1 pointer-coarse:gap-2">
+        <div
+          className={cn(
+            'relative z-10 -mt-1 -mr-1 flex shrink-0 items-start gap-1 pointer-coarse:gap-2',
+            variant === 'inbox' && 'max-md:mt-0 max-md:mr-0 max-md:self-end',
+          )}
+        >
           {variant === 'trash' ? (
             <>
               <Button
@@ -271,10 +278,9 @@ export function NoteList({
                 onClick={() => applyFields(note, { status: 'ACTIVE' })}
                 aria-label={`Chuyển “${name}” sang Đang dùng`}
                 title="Chuyển sang Đang dùng"
-                className="max-md:size-7 max-md:px-0 max-md:pointer-coarse:size-10"
               >
                 <Check className="text-status-active" />
-                <span className="max-md:sr-only">Đang dùng</span>
+                Đang dùng
               </Button>
               <Button
                 variant="ghost"
