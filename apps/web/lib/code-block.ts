@@ -88,12 +88,14 @@ export function toggleCodeBlock(doc: string, from: number, to: number): TextEdit
   const inner = doc.slice(rangeFrom, rangeTo);
   const longest = Math.max(0, ...[...inner.matchAll(/^ {0,3}(`{3,})/gm)].map((m) => m[1]!.length));
   const fence = '`'.repeat(Math.max(3, longest + 1));
+  // Block ở cuối doc: thêm một dòng sau rào đóng để còn chỗ gõ tiếp bên dưới hộp code.
+  const after = rangeTo === doc.length ? '\n' : '';
   if (from === to && inner.trim() === '') {
     const cursor = rangeFrom + fence.length + 1;
     return {
       from: rangeFrom,
       to: rangeTo,
-      insert: `${fence}\n\n${fence}`,
+      insert: `${fence}\n\n${fence}${after}`,
       selFrom: cursor,
       selTo: cursor,
     };
@@ -102,7 +104,7 @@ export function toggleCodeBlock(doc: string, from: number, to: number): TextEdit
   return {
     from: rangeFrom,
     to: rangeTo,
-    insert: `${fence}\n${inner}\n${fence}`,
+    insert: `${fence}\n${inner}\n${fence}${after}`,
     selFrom: from + shift,
     selTo: to + shift,
   };
@@ -192,7 +194,7 @@ function runEdit(view: EditorView, fn: (doc: string, from: number, to: number) =
     changes: { from: edit.from, to: edit.to, insert: edit.insert },
     selection: { anchor: edit.selFrom, head: edit.selTo },
     scrollIntoView: true,
-    userEvent: 'input',
+    userEvent: 'input.code', // code-style.ts không chặn sửa rào từ lệnh này
   });
   return true;
 }

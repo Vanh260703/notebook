@@ -32,7 +32,7 @@ function run(marked: string, fn: Toggle = toggleCodeBlock): string {
 
 describe('toggleCodeBlock', () => {
   it('opens an empty block on an empty line, caret inside', () => {
-    expect(run('Lệnh:\n|')).toBe('Lệnh:\n```\n|\n```');
+    expect(run('Lệnh:\n|')).toBe('Lệnh:\n```\n|\n```\n');
   });
 
   it('wraps the current line and keeps the caret on the same text', () => {
@@ -41,6 +41,10 @@ describe('toggleCodeBlock', () => {
 
   it('wraps every line the selection touches, keeping the selection', () => {
     expect(run('x\ndoc[ker ps\ndocker lo]gs\ny')).toBe('x\n```\ndoc[ker ps\ndocker lo]gs\n```\ny');
+  });
+
+  it('adds a line after the block when it ends the document', () => {
+    expect(run('a\nx|')).toBe('a\n```\nx|\n```\n');
   });
 
   it('ignores the next line when the selection ends at its start', () => {
@@ -69,7 +73,7 @@ describe('toggleCodeBlock', () => {
   });
 
   it('uses a longer fence when the lines already contain one', () => {
-    expect(run('[```js\nx\n```\ny]')).toBe('````\n[```js\nx\n```\ny]\n````');
+    expect(run('[```js\nx\n```\ny]')).toBe('````\n[```js\nx\n```\ny]\n````\n');
   });
 
   it('does not treat ~~~ as closing a ``` block', () => {
@@ -130,7 +134,7 @@ describe('toggleCode (Ctrl+Shift+C)', () => {
   });
 
   it('uses a code block for a multi-line selection', () => {
-    expect(smart('[a\nb]')).toBe('```\n[a\nb]\n```');
+    expect(smart('[a\nb]')).toBe('```\n[a\nb]\n```\n');
   });
 
   it('treats a whole-line selection (ending at the next line) as inline', () => {

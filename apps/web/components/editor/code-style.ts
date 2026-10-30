@@ -2,89 +2,210 @@ import { syntaxTree } from '@codemirror/language';
 import {
   Decoration,
   type DecorationSet,
-  type EditorState,
+  EditorState,
+  EditorView,
   type Range,
-  ViewPlugin,
-  type ViewUpdate,
-  type EditorView,
+  StateField,
+  Transaction,
+  type TransactionSpec,
 } from '@uiw/react-codemirror';
+
+/*
+ * Hiện code trong editor như Slack: không thấy ký hiệu Markdown.
+ * - Inline code: chip màu cam, dấu ` ẩn (con trỏ chạm vào thì hiện mờ để sửa).
+ * - Code block đã đóng: hai dòng ``` ẩn hẳn, các dòng code thành một hộp có viền. Dòng ẩn là
+ *   "atomic" (con trỏ nhảy qua) và được bảo vệ: gõ/xóa không làm hỏng rào. Gõ ngay trước/sau
+ *   hộp thì chữ sang dòng mới ngoài hộp. Xóa lùi trong hộp rỗng thì bỏ cả hộp.
+ * Decoration ẩn cả dấu xuống dòng nên phải cấp từ StateField (ViewPlugin không được phép).
+ */
 
 const inlineCode = Decoration.mark({ class: 'cm-inline-code' });
 const codeMark = Decoration.mark({ class: 'cm-code-mark' });
 const hidden = Decoration.replace({});
-const codeLine = Decoration.line({ class: 'cm-code-line' });
-const codeLineFirst = Decoration.line({ class: 'cm-code-line cm-code-line-first' });
-const codeLineLast = Decoration.line({ class: 'cm-code-line cm-code-line-last' });
-const codeLineOnly = Decoration.line({
-  class: 'cm-code-line cm-code-line-first cm-code-line-last',
-});
+const lineDeco = (first: boolean, last: boolean) =>
+  Decoration.line({
+    class: ['cm-code-line', first && 'cm-code-line-first', last && 'cm-code-line-last']
+      .filter(Boolean)
+      .join(' '),
+  });
 
-/** Con trỏ/vùng chọn chạm vào [from, to] (kể cả đứng ngay sát hai đầu). */
+/** Một code block đã đóng đang được hiện dạng hộp. */
+interface Box {
+  from: number; // đầu dòng ``` mở
+  to: number; // cuối dòng ``` đóng
+  head: { from: number; to: number }; // vùng ẩn phía trên: dòng mở + '\n'
+  tail: { from: number; to: number }; // vùng ẩn phía dưới: '\n' + dòng đóng
+  empty: boolean; // chỉ có khoảng trắng bên trong
+}
+
+interface CodeStyle {
+  decorations: DecorationSet;
+  atomic: DecorationSet;
+  boxes: Box[];
+}
+
 function touches(state: EditorState, from: number, to: number) {
   return state.selection.ranges.some((r) => r.from <= to && r.to >= from);
 }
 
-function build(view: EditorView): DecorationSet {
-  const { state } = view;
+function build(state: EditorState): CodeStyle {
+  const { doc } = state;
   const decos: Range<Decoration>[] = [];
-  for (const { from, to } of view.visibleRanges) {
-    syntaxTree(state).iterate({
-      from,
-      to,
-      enter: (node) => {
-        if (node.name === 'FencedCode') {
-          const first = state.doc.lineAt(node.from).number;
-          const last = state.doc.lineAt(node.to).number;
-          for (let n = first; n <= last; n++) {
-            const deco =
-              first === last
-                ? codeLineOnly
-                : n === first
-                  ? codeLineFirst
-                  : n === last
-                    ? codeLineLast
-                    : codeLine;
-            decos.push(deco.range(state.doc.line(n).from));
-          }
-          return false;
+  const atomic: Range<Decoration>[] = [];
+  const boxes: Box[] = [];
+  syntaxTree(state).iterate({
+    enter: (node) => {
+      if (node.name !== 'FencedCode' && node.name !== 'InlineCode') return;
+      const marks: { from: number; to: number }[] = [];
+      const cur = node.node.cursor();
+      if (cur.firstChild()) {
+        do if (cur.name === 'CodeMark') marks.push({ from: cur.from, to: cur.to });
+        while (cur.nextSibling());
+      }
+      const open = marks[0];
+      const close = marks.length > 1 ? marks[marks.length - 1] : undefined;
+
+      if (node.name === 'FencedCode') {
+        const openLine = doc.lineAt(node.from);
+        const closeLine = close ? doc.lineAt(close.from) : null;
+        // Chưa đóng (đang gõ dở) hoặc không có dòng nội dung: để nguyên dạng Markdown.
+        if (!closeLine || closeLine.number < openLine.number + 2) return false;
+        const first = openLine.number + 1;
+        const last = closeLine.number - 1;
+        const lastLine = doc.line(last);
+        const box: Box = {
+          from: openLine.from,
+          to: closeLine.to,
+          head: { from: openLine.from, to: openLine.to + 1 },
+          tail: { from: lastLine.to, to: closeLine.to },
+          empty: doc.sliceString(openLine.to + 1, lastLine.to).trim() === '',
+        };
+        boxes.push(box);
+        for (const r of [box.head, box.tail]) {
+          decos.push(hidden.range(r.from, r.to));
+          atomic.push(hidden.range(r.from, r.to));
         }
-        if (node.name !== 'InlineCode') return;
-        // Hai đầu là CodeMark (chuỗi `); nội dung ở giữa thành "chip" như Slack.
-        const marks: { from: number; to: number }[] = [];
-        const cur = node.node.cursor();
-        if (cur.firstChild()) {
-          do if (cur.name === 'CodeMark') marks.push({ from: cur.from, to: cur.to });
-          while (cur.nextSibling());
+        for (let n = first; n <= last; n++) {
+          // Dòng ``` mở bị ẩn cả '\n' nên dòng code đầu nối vào nó: dòng hiển thị bắt đầu ở openLine.from.
+          const at = n === first ? openLine.from : doc.line(n).from;
+          decos.push(lineDeco(n === first, n === last).range(at));
         }
-        const [open, close] = [marks[0], marks[marks.length - 1]];
-        if (!open || !close || open === close || open.to >= close.from) return false;
-        decos.push(inlineCode.range(open.to, close.from));
-        // Con trỏ ở ngoài thì ẩn dấu `; đi vào (hoặc đứng sát) thì hiện mờ để sửa được.
-        const mark = touches(state, node.from, node.to) ? codeMark : hidden;
-        decos.push(mark.range(open.from, open.to), mark.range(close.from, close.to));
         return false;
-      },
-    });
-  }
-  return Decoration.set(decos, true);
+      }
+
+      // InlineCode: hai đầu là chuỗi `, nội dung ở giữa thành chip.
+      if (!open || !close || open.to >= close.from) return false;
+      decos.push(inlineCode.range(open.to, close.from));
+      const mark = touches(state, node.from, node.to) ? codeMark : hidden;
+      decos.push(mark.range(open.from, open.to), mark.range(close.from, close.to));
+      return false;
+    },
+  });
+  return {
+    decorations: Decoration.set(decos, true),
+    atomic: Decoration.set(atomic, true),
+    boxes,
+  };
 }
 
-/** Hiện code trong editor gần giống bản xem trước: inline code dạng chip màu cam, code block có nền. */
-export const codeStyle = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet;
-    constructor(view: EditorView) {
-      this.decorations = build(view);
+const codeStyleField = StateField.define<CodeStyle>({
+  create: build,
+  update(value, tr) {
+    if (tr.docChanged || tr.selection || syntaxTree(tr.startState) !== syntaxTree(tr.state)) {
+      return build(tr.state);
     }
-    update(u: ViewUpdate) {
-      if (
-        u.docChanged ||
-        u.selectionSet ||
-        u.viewportChanged ||
-        syntaxTree(u.startState) !== syntaxTree(u.state)
-      )
-        this.decorations = build(u.view);
-    }
+    return value;
   },
-  { decorations: (v) => v.decorations },
-);
+  provide: (f) => [
+    EditorView.decorations.from(f, (v) => v.decorations),
+    EditorView.atomicRanges.of((view) => view.state.field(f).atomic),
+  ],
+});
+
+/** Sửa do người dùng gõ/xóa/kéo thả (lệnh của app dùng 'input.code', undo/redo và setValue không bị chặn). */
+function isUserEdit(tr: Transaction) {
+  return (
+    (tr.isUserEvent('input') && !tr.isUserEvent('input.code')) ||
+    tr.isUserEvent('delete') ||
+    tr.isUserEvent('move')
+  );
+}
+
+const overlaps = (a: number, b: number, r: { from: number; to: number }) => a < r.to && b > r.from;
+
+const protectFences = EditorState.transactionFilter.of((tr) => {
+  if (!tr.docChanged || !isUserEdit(tr)) return tr;
+  const { boxes } = tr.startState.field(codeStyleField);
+  if (!boxes.length) return tr;
+
+  const changes: { from: number; to: number; insert: string }[] = [];
+  tr.changes.iterChanges((from, to, _f, _t, inserted) =>
+    changes.push({ from, to, insert: inserted.toString() }),
+  );
+  let rewrite: TransactionSpec | null = null;
+  for (const c of changes) {
+    for (const box of boxes) {
+      const hit =
+        c.from === c.to
+          ? (c.from > box.head.from && c.from < box.head.to) ||
+            (c.from > box.tail.from && c.from < box.tail.to) ||
+            c.from === box.head.from ||
+            c.from === box.tail.to
+          : overlaps(c.from, c.to, box.head) || overlaps(c.from, c.to, box.tail);
+      if (!hit) continue;
+      // Xóa/thay cả khối (chọn hết rồi xóa, dán đè...) thì cho qua.
+      if (c.from <= box.from && c.to >= box.to) continue;
+      if (changes.length > 1) return {}; // nhiều con trỏ chạm rào: bỏ qua cho an toàn
+      // Gõ ngay trước hộp (con trỏ ở đầu vùng ẩn trên): chữ thành dòng mới phía trên hộp.
+      if (c.from === c.to && c.from === box.head.from) {
+        const insert = c.insert.endsWith('\n') ? c.insert : `${c.insert}\n`;
+        rewrite = {
+          changes: { from: c.from, insert },
+          selection: { anchor: c.from + c.insert.length },
+        };
+        continue;
+      }
+      // Gõ ngay sau hộp (con trỏ ở cuối vùng ẩn dưới): chữ thành dòng mới phía dưới hộp.
+      if (c.from === c.to && c.from === box.tail.to) {
+        const insert = c.insert.startsWith('\n') ? c.insert : `\n${c.insert}`;
+        rewrite = {
+          changes: { from: c.from, insert },
+          selection: { anchor: c.from + insert.length },
+        };
+        continue;
+      }
+      // Xóa chạm rào của hộp rỗng (Backspace/Delete trong hộp rỗng): bỏ cả hộp, như Slack.
+      if (box.empty && c.insert === '') {
+        const end = box.to < tr.startState.doc.length ? box.to + 1 : box.to;
+        rewrite = { changes: { from: box.from, to: end }, selection: { anchor: box.from } };
+        continue;
+      }
+      return {}; // còn lại (xóa lùi ở đầu hộp, gõ đè lên rào...): không làm gì
+    }
+  }
+  if (!rewrite) return tr;
+  return { ...rewrite, scrollIntoView: true, userEvent: tr.annotation(Transaction.userEvent) };
+});
+
+/** Gõ dấu ` thứ ba trên dòng trống (```) thì tạo ngay một code block rỗng, như Slack. */
+const fenceOnType = EditorView.inputHandler.of((view, from, to, text) => {
+  if (text !== '`' || from !== to) return false;
+  const { state } = view;
+  const line = state.doc.lineAt(from);
+  if (line.text !== '``' || from !== line.to) return false;
+  // Đang ở trong một code block chưa đóng (gõ rào đóng bằng tay) thì để yên.
+  for (let n = syntaxTree(state).resolveInner(from, -1); n; n = n.parent!) {
+    if (n.name === 'FencedCode') return false;
+    if (!n.parent) break;
+  }
+  const after = line.to < state.doc.length ? '' : '\n';
+  view.dispatch({
+    changes: { from: line.from, to: line.to, insert: `\`\`\`\n\n\`\`\`${after}` },
+    selection: { anchor: line.from + 4 },
+    userEvent: 'input.code',
+    scrollIntoView: true,
+  });
+  return true;
+});
+
+export const codeStyle = [codeStyleField, protectFences, fenceOnType];
