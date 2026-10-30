@@ -58,7 +58,6 @@
   --color-type-personal: var(--type-personal);
   --color-type-personal-bg: var(--type-personal-bg);
   --color-mark: var(--mark);
-  --color-code-inline: var(--code-inline);
   --shadow-elev-1: var(--elev-1);
   --shadow-elev-2: var(--elev-2);
   --shadow-elev-3: var(--elev-3);
@@ -113,8 +112,8 @@
   --selection: oklch(0.88 0.06 277);
   /* Nền <mark> của kết quả tìm kiếm, chữ text-foreground. */
   --mark: oklch(0.92 0.1 95);
-  /* Chữ của inline code (cam như Slack), đạt 4.5:1 trên nền --muted. */
-  --code-inline: oklch(0.52 0.15 45);
+  /* Chữ trong code block (cam như Slack), đạt 4.5:1 trên nền --muted. */
+  --code-ink: oklch(0.52 0.15 45);
 
   --status-inbox: oklch(0.5 0.11 60);
   --status-inbox-bg: oklch(0.96 0.04 75);
@@ -184,7 +183,7 @@
   --ring: oklch(0.8 0.11 277);
   --selection: oklch(0.36 0.09 277);
   --mark: oklch(0.45 0.09 85);
-  --code-inline: oklch(0.8 0.13 65);
+  --code-ink: oklch(0.8 0.13 65);
 
   --status-inbox: oklch(0.83 0.12 75);
   --status-inbox-bg: oklch(0.29 0.045 70);
@@ -300,7 +299,7 @@ html:has([data-reading]) {
   --tw-prose-captions: var(--muted-foreground);
   --tw-prose-kbd: var(--foreground);
   --tw-prose-code: var(--foreground);
-  --tw-prose-pre-code: var(--foreground);
+  --tw-prose-pre-code: var(--code-ink);
   --tw-prose-pre-bg: var(--muted);
   --tw-prose-th-borders: var(--border);
   --tw-prose-td-borders: var(--border);
@@ -405,21 +404,10 @@ html:has([data-reading]) {
 .markdown-editor .cm-editor .cm-placeholder {
   color: var(--muted-foreground);
 }
-/* Code trong editor (components/editor/code-style.ts), cùng kiểu với bản xem trước. */
-.markdown-editor .cm-inline-code {
-  color: var(--code-inline);
-  background: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: 0.25rem;
-  padding: 0.0625rem 0.1875rem;
-  -webkit-box-decoration-break: clone;
-  box-decoration-break: clone;
-}
-.markdown-editor .cm-code-mark {
-  color: var(--muted-foreground);
-}
-/* Code block dạng hộp: dòng ``` đã ẩn, các dòng code ghép thành một khung có viền. */
+/* Code block dạng hộp (components/editor/code-style.ts): dòng ``` đã ẩn, các dòng code ghép
+ * thành một khung có viền, chữ cam như bản xem trước. */
 .markdown-editor .cm-editor .cm-code-line {
+  color: var(--code-ink);
   background: var(--muted);
   border-inline: 1px solid var(--border);
   padding-inline: 0.75rem;

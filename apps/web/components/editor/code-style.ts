@@ -11,16 +11,13 @@ import {
 } from '@uiw/react-codemirror';
 
 /*
- * Hiện code trong editor như Slack: không thấy ký hiệu Markdown.
- * - Inline code: chip màu cam, dấu ` ẩn (con trỏ chạm vào thì hiện mờ để sửa).
- * - Code block đã đóng: hai dòng ``` ẩn hẳn, các dòng code thành một hộp có viền. Dòng ẩn là
- *   "atomic" (con trỏ nhảy qua) và được bảo vệ: gõ/xóa không làm hỏng rào. Gõ ngay trước/sau
- *   hộp thì chữ sang dòng mới ngoài hộp. Xóa lùi trong hộp rỗng thì bỏ cả hộp.
+ * Hiện code block trong editor như Slack: không thấy dòng ```.
+ * Code block đã đóng: hai dòng ``` ẩn hẳn, các dòng code thành một hộp có viền, chữ màu cam.
+ * Dòng ẩn là "atomic" (con trỏ nhảy qua) và được bảo vệ: gõ/xóa không làm hỏng rào. Gõ ngay
+ * trước/sau hộp thì chữ sang dòng mới ngoài hộp. Xóa lùi trong hộp rỗng thì bỏ cả hộp.
  * Decoration ẩn cả dấu xuống dòng nên phải cấp từ StateField (ViewPlugin không được phép).
  */
 
-const inlineCode = Decoration.mark({ class: 'cm-inline-code' });
-const codeMark = Decoration.mark({ class: 'cm-code-mark' });
 const hidden = Decoration.replace({});
 const lineDeco = (first: boolean, last: boolean) =>
   Decoration.line({
@@ -44,10 +41,6 @@ interface CodeStyle {
   boxes: Box[];
 }
 
-function touches(state: EditorState, from: number, to: number) {
-  return state.selection.ranges.some((r) => r.from <= to && r.to >= from);
-}
-
 function build(state: EditorState): CodeStyle {
   const { doc } = state;
   const decos: Range<Decoration>[] = [];
@@ -55,49 +48,39 @@ function build(state: EditorState): CodeStyle {
   const boxes: Box[] = [];
   syntaxTree(state).iterate({
     enter: (node) => {
-      if (node.name !== 'FencedCode' && node.name !== 'InlineCode') return;
-      const marks: { from: number; to: number }[] = [];
+      if (node.name !== 'FencedCode') return;
+      // Rào đóng là CodeMark cuối (CodeMark đầu là rào mở).
+      let close: { from: number } | undefined;
+      let marks = 0;
       const cur = node.node.cursor();
       if (cur.firstChild()) {
-        do if (cur.name === 'CodeMark') marks.push({ from: cur.from, to: cur.to });
+        do if (cur.name === 'CodeMark' && ++marks > 1) close = { from: cur.from };
         while (cur.nextSibling());
       }
-      const open = marks[0];
-      const close = marks.length > 1 ? marks[marks.length - 1] : undefined;
-
-      if (node.name === 'FencedCode') {
-        const openLine = doc.lineAt(node.from);
-        const closeLine = close ? doc.lineAt(close.from) : null;
-        // Chưa đóng (đang gõ dở) hoặc không có dòng nội dung: để nguyên dạng Markdown.
-        if (!closeLine || closeLine.number < openLine.number + 2) return false;
-        const first = openLine.number + 1;
-        const last = closeLine.number - 1;
-        const lastLine = doc.line(last);
-        const box: Box = {
-          from: openLine.from,
-          to: closeLine.to,
-          head: { from: openLine.from, to: openLine.to + 1 },
-          tail: { from: lastLine.to, to: closeLine.to },
-          empty: doc.sliceString(openLine.to + 1, lastLine.to).trim() === '',
-        };
-        boxes.push(box);
-        for (const r of [box.head, box.tail]) {
-          decos.push(hidden.range(r.from, r.to));
-          atomic.push(hidden.range(r.from, r.to));
-        }
-        for (let n = first; n <= last; n++) {
-          // Dòng ``` mở bị ẩn cả '\n' nên dòng code đầu nối vào nó: dòng hiển thị bắt đầu ở openLine.from.
-          const at = n === first ? openLine.from : doc.line(n).from;
-          decos.push(lineDeco(n === first, n === last).range(at));
-        }
-        return false;
+      const openLine = doc.lineAt(node.from);
+      const closeLine = close ? doc.lineAt(close.from) : null;
+      // Chưa đóng (đang gõ dở) hoặc không có dòng nội dung: để nguyên dạng Markdown.
+      if (!closeLine || closeLine.number < openLine.number + 2) return false;
+      const first = openLine.number + 1;
+      const last = closeLine.number - 1;
+      const lastLine = doc.line(last);
+      const box: Box = {
+        from: openLine.from,
+        to: closeLine.to,
+        head: { from: openLine.from, to: openLine.to + 1 },
+        tail: { from: lastLine.to, to: closeLine.to },
+        empty: doc.sliceString(openLine.to + 1, lastLine.to).trim() === '',
+      };
+      boxes.push(box);
+      for (const r of [box.head, box.tail]) {
+        decos.push(hidden.range(r.from, r.to));
+        atomic.push(hidden.range(r.from, r.to));
       }
-
-      // InlineCode: hai đầu là chuỗi `, nội dung ở giữa thành chip.
-      if (!open || !close || open.to >= close.from) return false;
-      decos.push(inlineCode.range(open.to, close.from));
-      const mark = touches(state, node.from, node.to) ? codeMark : hidden;
-      decos.push(mark.range(open.from, open.to), mark.range(close.from, close.to));
+      for (let n = first; n <= last; n++) {
+        // Dòng ``` mở bị ẩn cả '\n' nên dòng code đầu nối vào nó: dòng hiển thị bắt đầu ở openLine.from.
+        const at = n === first ? openLine.from : doc.line(n).from;
+        decos.push(lineDeco(n === first, n === last).range(at));
+      }
       return false;
     },
   });
@@ -111,7 +94,7 @@ function build(state: EditorState): CodeStyle {
 const codeStyleField = StateField.define<CodeStyle>({
   create: build,
   update(value, tr) {
-    if (tr.docChanged || tr.selection || syntaxTree(tr.startState) !== syntaxTree(tr.state)) {
+    if (tr.docChanged || syntaxTree(tr.startState) !== syntaxTree(tr.state)) {
       return build(tr.state);
     }
     return value;
