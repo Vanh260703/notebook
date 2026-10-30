@@ -45,7 +45,8 @@ export function MarkdownPreview({
     <div
       className={cn(
         // Màu prose lấy từ token (globals.css), không cần dark:prose-invert.
-        'prose max-w-none prose-code:font-normal prose-code:before:content-none prose-code:after:content-none prose-pre:rounded-lg prose-pre:border',
+        // Khối code co vừa chữ (w-fit) như trong editor; dòng quá dài thì cuộn ngang trong khối.
+        'prose max-w-none prose-code:font-normal prose-code:before:content-none prose-code:after:content-none prose-pre:w-fit prose-pre:max-w-full prose-pre:rounded-lg prose-pre:border',
         reading
           ? 'text-[1.0625rem] md:prose-lg md:text-[1.125rem] prose-headings:scroll-mt-20 prose-pre:overflow-x-auto'
           : 'prose-sm',

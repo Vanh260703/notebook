@@ -393,6 +393,8 @@ html:has([data-reading]) {
 }
 .markdown-editor .cm-editor .cm-content {
   padding: 0.75rem 0;
+  /* Flex item: không nở theo dòng code có bề rộng cố định, để max-width: 100% của hộp code có tác dụng. */
+  min-width: 0;
 }
 .markdown-editor .cm-editor .cm-cursor {
   border-left: 2px solid var(--primary-ink);
@@ -405,12 +407,18 @@ html:has([data-reading]) {
   color: var(--muted-foreground);
 }
 /* Code block dạng hộp (components/editor/code-style.ts): dòng ``` đã ẩn, các dòng code ghép
- * thành một khung có viền, chữ cam như bản xem trước. */
+ * thành một khung có viền vừa với chữ, chữ cam như bản xem trước. */
 .markdown-editor .cm-editor .cm-code-line {
   color: var(--code-ink);
   background: var(--muted);
   border-inline: 1px solid var(--border);
   padding-inline: 0.75rem;
+  /* Co vừa dòng dài nhất (--code-box-ch đặt trong code-style.ts), không kéo hết bề ngang. */
+  box-sizing: border-box;
+  width: calc((var(--code-box-ch, 12) + 1) * 1ch + 1.5rem + 2px); /* +1ch cho con trỏ ở cuối dòng */
+  /* JetBrains Mono ghép -- thành một nét trông như " -": trong code phải thấy đúng từng ký tự. */
+  font-variant-ligatures: none;
+  max-width: 100%;
 }
 .markdown-editor .cm-editor .cm-code-line-first {
   border-top: 1px solid var(--border);

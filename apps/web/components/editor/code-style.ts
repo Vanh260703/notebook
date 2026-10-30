@@ -19,11 +19,31 @@ import {
  */
 
 const hidden = Decoration.replace({});
-const lineDeco = (first: boolean, last: boolean) =>
+/** Hộp rỗng/ngắn vẫn đủ rộng để thấy chỗ gõ. */
+const MIN_BOX_CH = 12;
+const TAB_CH = 4;
+
+/** Độ rộng (theo ký tự) của dòng dài nhất; editor dùng font monospace nên `ch` khớp với chữ. */
+function widestLine(lines: string[]): number {
+  let max = 0;
+  for (const text of lines) {
+    let w = 0;
+    for (const ch of text) w += ch === '\t' ? TAB_CH : 1;
+    max = Math.max(max, w);
+  }
+  return Math.max(max, MIN_BOX_CH);
+}
+
+/**
+ * Mỗi dòng code là một phần tử riêng nên tất cả cùng nhận một bề rộng (theo dòng dài nhất) để
+ * hộp co vừa chữ mà vẫn thẳng mép. Dòng dài hơn khung soạn thì bị chặn ở 100% và xuống dòng.
+ */
+const lineDeco = (first: boolean, last: boolean, widthCh: number) =>
   Decoration.line({
     class: ['cm-code-line', first && 'cm-code-line-first', last && 'cm-code-line-last']
       .filter(Boolean)
       .join(' '),
+    attributes: { style: `--code-box-ch: ${widthCh}` },
   });
 
 /** Một code block đã đóng đang được hiện dạng hộp. */
@@ -76,10 +96,13 @@ function build(state: EditorState): CodeStyle {
         decos.push(hidden.range(r.from, r.to));
         atomic.push(hidden.range(r.from, r.to));
       }
+      const lineTexts: string[] = [];
+      for (let n = first; n <= last; n++) lineTexts.push(doc.line(n).text);
+      const widthCh = widestLine(lineTexts);
       for (let n = first; n <= last; n++) {
         // Dòng ``` mở bị ẩn cả '\n' nên dòng code đầu nối vào nó: dòng hiển thị bắt đầu ở openLine.from.
         const at = n === first ? openLine.from : doc.line(n).from;
-        decos.push(lineDeco(n === first, n === last).range(at));
+        decos.push(lineDeco(n === first, n === last, widthCh).range(at));
       }
       return false;
     },
