@@ -418,9 +418,13 @@ html:has([data-reading]) {
   box-decoration-break: clone;
   font-variant-ligatures: none;
 }
-/* Cặp `` rỗng vừa chèn: hiện thành ô rỗng (dấu ` trong suốt giữ chỗ), con trỏ ở giữa. */
+/* Cặp `` rỗng vừa chèn: widget ô rỗng ngay trước con trỏ (xem EmptyChip trong code-style.ts). */
 .markdown-editor .cm-inline-code-empty {
-  color: transparent;
+  display: inline-block;
+  width: 1ch;
+  height: 1.25em;
+  vertical-align: text-bottom;
+  margin-right: 0.125rem;
 }
 /* Code block dạng hộp (components/editor/code-style.ts): dòng ``` đã ẩn, các dòng code ghép
  * thành một khung có viền vừa với chữ, chữ cam như bản xem trước. */

@@ -8,12 +8,13 @@ import {
   StateField,
   Transaction,
   type TransactionSpec,
+  WidgetType,
 } from '@uiw/react-codemirror';
 
 /*
  * Hiện code trong editor như Slack: không thấy ký hiệu Markdown, chữ code màu cam.
- * - Inline code (cùng dòng với chữ): ô có viền, dấu ` luôn ẩn. Cặp `` rỗng vừa chèn hiện thành ô
- *   rỗng khi con trỏ ở giữa. Xóa lùi vào dấu ` ẩn thì bỏ định dạng code (không để sót dấu ` lẻ).
+ * - Inline code (cùng dòng với chữ): ô có viền, dấu ` luôn ẩn. Cặp `` rỗng vừa chèn hiện thành một
+ *   ô rỗng nhỏ ngay trước con trỏ. Xóa lùi vào dấu ` ẩn thì bỏ định dạng code (không để sót dấu ` lẻ).
  * - Code block đã đóng: hai dòng ``` ẩn hẳn, các dòng code thành một hộp có viền. Dòng ẩn là
  *   "atomic" (con trỏ nhảy qua) và được bảo vệ: gõ/xóa không làm hỏng rào. Gõ ngay trước/sau
  *   hộp thì chữ sang dòng mới ngoài hộp. Xóa lùi trong hộp rỗng thì bỏ cả hộp.
@@ -22,7 +23,24 @@ import {
 
 const hidden = Decoration.replace({});
 const inlineChip = Decoration.mark({ class: 'cm-inline-code' });
-const emptyChip = Decoration.mark({ class: 'cm-inline-code cm-inline-code-empty' });
+/**
+ * Ô rỗng của cặp `` vừa chèn. Là widget (không chứa chữ) chứ không phải mark: bộ gõ tiếng Việt
+ * (Telex/VNI) ghép chữ ngay tại con trỏ và CodeMirror không vẽ lại vùng đang ghép, nên nếu con trỏ
+ * nằm trong một span có style thì chữ đang gõ ăn style đó (trước đây là chữ trong suốt: gõ mà
+ * không thấy chữ cho tới khi gõ dấu cách).
+ */
+class EmptyChip extends WidgetType {
+  toDOM() {
+    const el = document.createElement('span');
+    el.className = 'cm-inline-code cm-inline-code-empty';
+    el.setAttribute('aria-hidden', 'true');
+    return el;
+  }
+  override eq() {
+    return true;
+  }
+}
+const emptyChip = Decoration.widget({ widget: new EmptyChip(), side: -1 });
 /** Hộp rỗng/ngắn vẫn đủ rộng để thấy chỗ gõ. */
 const MIN_BOX_CH = 12;
 const TAB_CH = 4;
@@ -150,7 +168,13 @@ function build(state: EditorState): CodeStyle {
     },
   });
   const pair = emptyPairAt(state);
-  if (pair !== null) decos.push(emptyChip.range(pair, pair + 2));
+  if (pair !== null) {
+    decos.push(
+      hidden.range(pair, pair + 1),
+      emptyChip.range(pair + 1),
+      hidden.range(pair + 1, pair + 2),
+    );
+  }
   return {
     decorations: Decoration.set(decos, true),
     atomic: Decoration.set(atomic, true),
