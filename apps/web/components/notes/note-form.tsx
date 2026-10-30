@@ -21,7 +21,6 @@ import {
   CircleAlert,
   CircleCheck,
   CloudOff,
-  Code,
   Eye,
   History,
   LoaderCircle,
@@ -42,7 +41,7 @@ import { GuardedLink, useRegisterUnsavedForm } from '@/components/unsaved-guard'
 import { errorMessage, isApiError } from '@/lib/api/client';
 import { createNote, restoreNote, updateNote } from '@/lib/api/notes';
 import { copyText } from '@/lib/clipboard';
-import { toggleCodeBlockCommand, toggleCodeCommand } from '@/lib/code-block';
+import { toggleCodeBlockCommand } from '@/lib/code-block';
 import { formatDateTime, formatSavedAt, formatShortDay } from '@/lib/date';
 import { STATUS_LABEL, TYPE_LABEL } from '@/lib/labels';
 import {
@@ -163,12 +162,6 @@ export function NoteForm(props: Props) {
   const focusTitleRef = useRef(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
-  const runEditorCommand = (command: (view: EditorView) => boolean) => {
-    const view = editorViewRef.current;
-    if (!view) return;
-    command(view);
-    view.focus();
-  };
 
   const [storage] = useState(getDraftStorage);
   const [writer] = useState(() => createDraftWriter(DRAFT_DEBOUNCE_MS));
@@ -747,40 +740,30 @@ export function NoteForm(props: Props) {
             >
               Markdown
             </span>
-            <div className="-mr-1.5 ml-auto flex items-center gap-0.5">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                // Giữ focus và vùng chọn trong editor khi bấm chuột.
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => runEditorCommand(toggleCodeCommand)}
-                aria-keyshortcuts={isMac() ? 'Meta+Shift+C' : 'Control+Shift+C'}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="-mr-1.5 ml-auto text-muted-foreground"
+              // Giữ focus và vùng chọn trong editor khi bấm chuột.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                const view = editorViewRef.current;
+                if (!view) return;
+                toggleCodeBlockCommand(view);
+                view.focus();
+              }}
+              aria-keyshortcuts={isMac() ? 'Meta+Shift+C' : 'Control+Shift+C'}
+            >
+              <SquareCode aria-hidden />
+              Code block
+              <kbd
+                className="hidden font-mono text-[0.7rem] opacity-70 sm:inline"
+                suppressHydrationWarning
               >
-                <Code aria-hidden />
-                Code
-                <kbd
-                  className="hidden font-mono text-[0.7rem] opacity-70 sm:inline"
-                  suppressHydrationWarning
-                >
-                  {isMac() ? '⇧⌘C' : 'Ctrl+Shift+C'}
-                </kbd>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => runEditorCommand(toggleCodeBlockCommand)}
-                aria-keyshortcuts={isMac() ? 'Meta+Alt+Shift+C' : 'Control+Alt+Shift+C'}
-                title={isMac() ? '⌥⇧⌘C' : 'Ctrl+Alt+Shift+C'}
-              >
-                <SquareCode aria-hidden />
-                Code block
-              </Button>
-            </div>
+                {isMac() ? '⇧⌘C' : 'Ctrl+Shift+C'}
+              </kbd>
+            </Button>
           </div>
           <div className="min-h-0 flex-1 overflow-auto px-3">
             <MarkdownEditor
