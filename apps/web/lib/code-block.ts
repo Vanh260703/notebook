@@ -57,9 +57,10 @@ function findFences(lines: Line[]): { open: number; close: number | null }[] {
 /**
  * Bật/tắt code block cho các dòng đang chọn (Ctrl/Cmd+Shift+C):
  * - Vùng chọn nằm trọn trong một code fence: bỏ hai dòng rào, giữ nội dung.
- * - Ngược lại: bọc các dòng đó bằng ``` (dài hơn mọi rào sẵn có bên trong). Dòng trống thì mở
- *   một block rỗng và đặt con trỏ vào giữa.
- * Con trỏ/vùng chọn giữ nguyên trên cùng đoạn chữ, không chọn cả block (gõ tiếp sẽ không ghi đè).
+ * - Không chọn gì: chữ sau con trỏ vào block (con trỏ ở cuối dòng thì mở block rỗng ở dòng dưới),
+ *   chữ trước con trỏ ở lại dòng trên. Có vùng chọn: chỉ phần được chọn vào block.
+ * Rào dài hơn mọi rào sẵn có bên trong. Con trỏ đặt ở đầu nội dung block (vùng chọn giữ nguyên
+ * trên cùng đoạn chữ, không chọn cả block nên gõ tiếp không ghi đè).
  */
 export function toggleCodeBlock(doc: string, from: number, to: number): TextEdit {
   const lines = splitLines(doc);
@@ -83,30 +84,26 @@ export function toggleCodeBlock(doc: string, from: number, to: number): TextEdit
     return { from: open.from, to: rangeTo, insert: inner, selFrom: map(from), selTo: map(to) };
   }
 
-  const rangeFrom = lines[startLine]!.from;
-  const rangeTo = lines[endLine]!.to;
-  const inner = doc.slice(rangeFrom, rangeTo);
+  // Chỉ phần từ con trỏ (hoặc vùng chọn) trở đi thành code; chữ đứng trước trên cùng dòng giữ
+  // nguyên ở dòng trên hộp, chữ sau vùng chọn xuống dòng dưới hộp.
+  const lineFrom = lines[startLine]!.from;
+  const lineTo = lines[endLine]!.to;
+  const end = from === to ? lineTo : Math.min(to, lineTo);
+  const before = doc.slice(lineFrom, from);
+  const inner = doc.slice(from, end);
+  const rest = doc.slice(end, lineTo);
   const longest = Math.max(0, ...[...inner.matchAll(/^ {0,3}(`{3,})/gm)].map((m) => m[1]!.length));
   const fence = '`'.repeat(Math.max(3, longest + 1));
+  const head = before.trim() ? `${before.trimEnd()}\n` : '';
   // Block ở cuối doc: thêm một dòng sau rào đóng để còn chỗ gõ tiếp bên dưới hộp code.
-  const after = rangeTo === doc.length ? '\n' : '';
-  if (from === to && inner.trim() === '') {
-    const cursor = rangeFrom + fence.length + 1;
-    return {
-      from: rangeFrom,
-      to: rangeTo,
-      insert: `${fence}\n\n${fence}${after}`,
-      selFrom: cursor,
-      selTo: cursor,
-    };
-  }
-  const shift = fence.length + 1;
+  const tail = rest.trim() ? `\n${rest.trimStart()}` : lineTo === doc.length ? '\n' : '';
+  const contentFrom = lineFrom + head.length + fence.length + 1;
   return {
-    from: rangeFrom,
-    to: rangeTo,
-    insert: `${fence}\n${inner}\n${fence}${after}`,
-    selFrom: from + shift,
-    selTo: to + shift,
+    from: lineFrom,
+    to: lineTo,
+    insert: `${head}${fence}\n${inner}\n${fence}${tail}`,
+    selFrom: contentFrom,
+    selTo: from === to ? contentFrom : contentFrom + inner.length,
   };
 }
 

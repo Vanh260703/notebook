@@ -33,20 +33,32 @@ describe('toggleCodeBlock', () => {
     expect(run('Lệnh:\n|')).toBe('Lệnh:\n```\n|\n```\n');
   });
 
-  it('wraps the current line and keeps the caret on the same text', () => {
-    expect(run('a\ndocker p|s\nb')).toBe('a\n```\ndocker p|s\n```\nb');
+  it('keeps the text before the caret and opens the block below it', () => {
+    expect(run('Chia terminator trên/dưới: |')).toBe('Chia terminator trên/dưới:\n```\n|\n```\n');
+    expect(run('a: |\nb')).toBe('a:\n```\n|\n```\nb');
   });
 
-  it('wraps every line the selection touches, keeping the selection', () => {
-    expect(run('x\ndoc[ker ps\ndocker lo]gs\ny')).toBe('x\n```\ndoc[ker ps\ndocker lo]gs\n```\ny');
+  it('moves the text after the caret into the block', () => {
+    expect(run('a\nChạy: |docker ps\nb')).toBe('a\nChạy:\n```\n|docker ps\n```\nb');
+  });
+
+  it('wraps the whole line when the caret is at its start', () => {
+    expect(run('a\n|docker ps\nb')).toBe('a\n```\n|docker ps\n```\nb');
+  });
+
+  it('wraps only the selection, text around it stays outside', () => {
+    expect(run('Lệnh [docker ps] rồi xem')).toBe('Lệnh\n```\n[docker ps]\n```\nrồi xem');
+    expect(run('x\ndoc[ker ps\ndocker lo]gs\ny')).toBe(
+      'x\ndoc\n```\n[ker ps\ndocker lo]\n```\ngs\ny',
+    );
   });
 
   it('adds a line after the block when it ends the document', () => {
-    expect(run('a\nx|')).toBe('a\n```\nx|\n```\n');
+    expect(run('a\n|x')).toBe('a\n```\n|x\n```\n');
   });
 
   it('ignores the next line when the selection ends at its start', () => {
-    expect(run('[a\nb\n]c')).toBe('```\n[a\nb\n]```\nc');
+    expect(run('[a\nb\n]c')).toBe('```\n[a\nb]\n```\nc');
   });
 
   it('removes the fences when the caret is inside a block', () => {
@@ -59,11 +71,11 @@ describe('toggleCodeBlock', () => {
 
   it('round-trips: wrap then unwrap gives back the original', () => {
     const doc = 'a\ndocker ps\nb';
-    const wrapped = toggleCodeBlock(doc, 4, 4);
+    const wrapped = toggleCodeBlock(doc, 2, 2);
     const doc2 = doc.slice(0, wrapped.from) + wrapped.insert + doc.slice(wrapped.to);
     const back = toggleCodeBlock(doc2, wrapped.selFrom, wrapped.selTo);
     expect(doc2.slice(0, back.from) + back.insert + doc2.slice(back.to)).toBe(doc);
-    expect(back.selFrom).toBe(4);
+    expect(back.selFrom).toBe(2);
   });
 
   it('removes an unclosed block that runs to the end', () => {
