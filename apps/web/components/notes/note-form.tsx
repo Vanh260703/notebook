@@ -122,13 +122,11 @@ const STATUS_OPTIONS: SegmentedOption<NoteStatus>[] = NOTE_STATUSES.map((st) => 
   };
 });
 
-const VIEW_OPTIONS: SegmentedOption<'write' | 'preview'>[] = [
-  { value: 'write', label: 'Viết', icon: <SquarePen className="size-3.5" aria-hidden /> },
-  { value: 'preview', label: 'Xem', icon: <Eye className="size-3.5" aria-hidden /> },
+type ContentMode = 'view' | 'edit';
+const MODE_OPTIONS: SegmentedOption<ContentMode>[] = [
+  { value: 'view', label: 'Xem', icon: <Eye className="size-3.5" aria-hidden /> },
+  { value: 'edit', label: 'Sửa', icon: <SquarePen className="size-3.5" aria-hidden /> },
 ];
-
-const paneHeader =
-  'hidden h-9 shrink-0 items-center border-b px-3 text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase lg:flex';
 
 /**
  * Form soạn note (tạo mới và sửa). Lưu bằng nút Lưu hoặc Ctrl/Cmd+S, chưa có autosave.
@@ -157,11 +155,17 @@ export function NoteForm(props: Props) {
   const [conflict, setConflict] = useState<Note | null>(null);
   const [trashedOnSave, setTrashedOnSave] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'write' | 'preview'>('write');
+  // Note có sẵn mở ở chế độ Xem; note mới thì vào thẳng Sửa (chưa có gì để xem).
+  const [mode, setMode] = useState<ContentMode>(props.mode === 'create' ? 'edit' : 'view');
   const [metaOpen, setMetaOpen] = useState(false);
   const focusTitleRef = useRef(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const editorViewRef = useRef<EditorView | null>(null);
+  const switchMode = (next: ContentMode) => {
+    setMode(next);
+    // Editor vẫn mount (chỉ ẩn) nên giữ được lịch sử undo; chuyển sang Sửa thì đưa con trỏ vào luôn.
+    if (next === 'edit') requestAnimationFrame(() => editorViewRef.current?.focus());
+  };
 
   const [storage] = useState(getDraftStorage);
   const [writer] = useState(() => createDraftWriter(DRAFT_DEBOUNCE_MS));
@@ -716,81 +720,65 @@ export function NoteForm(props: Props) {
         />
       </div>
 
-      {/* Dưới lg: chuyển Viết / Xem. Từ lg: chia đôi (từ md đến lg mỗi bên quá hẹp vì có sidebar). */}
-      <Segmented
-        label="Chế độ xem"
-        value={tab}
-        onChange={setTab}
-        options={VIEW_OPTIONS}
-        className="self-start lg:hidden"
-      />
+      {/* Một khung nội dung, chuyển giữa Xem (Markdown đã hiển thị) và Sửa (editor). */}
+      <div className="flex items-center gap-2">
+        <Segmented label="Chế độ" value={mode} onChange={switchMode} options={MODE_OPTIONS} />
+        {mode === 'edit' ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="-mr-1.5 ml-auto text-muted-foreground"
+            // Giữ focus và vùng chọn trong editor khi bấm chuột.
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              const view = editorViewRef.current;
+              if (!view) return;
+              toggleCodeCommand(view);
+              view.focus();
+            }}
+            aria-keyshortcuts={isMac() ? 'Meta+Shift+C' : 'Control+Shift+C'}
+          >
+            <SquareCode aria-hidden />
+            Code
+            <kbd
+              className="hidden font-mono text-[0.7rem] opacity-70 sm:inline"
+              suppressHydrationWarning
+            >
+              {isMac() ? '⇧⌘C' : 'Ctrl+Shift+C'}
+            </kbd>
+          </Button>
+        ) : null}
+      </div>
 
-      <div className="grid min-h-[60dvh] overflow-hidden rounded-xl border bg-card shadow-elev-1 lg:min-h-0 lg:flex-1 lg:grid-cols-2 lg:grid-rows-[minmax(0,1fr)]">
+      <div className="flex min-h-[60dvh] flex-col overflow-hidden rounded-xl border bg-card shadow-elev-1 lg:min-h-0 lg:flex-1">
+        {/* Editor luôn mount (ẩn khi Xem) để không mất lịch sử undo khi chuyển qua lại. */}
         <div
           className={cn(
-            'flex min-h-[60dvh] min-w-0 flex-col focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset lg:min-h-0 lg:border-r',
-            tab !== 'write' && 'hidden lg:flex',
+            'min-h-0 flex-1 overflow-auto px-3 focus-within:ring-2 focus-within:ring-ring focus-within:ring-inset',
+            mode !== 'edit' && 'hidden',
           )}
         >
-          {/* Khác pane Xem trước: hiện cả dưới lg vì chứa nút (trên điện thoại không có phím tắt). */}
-          <div className="flex min-h-9 shrink-0 items-center justify-between gap-2 border-b px-3 py-1">
-            <span
-              aria-hidden
-              className="hidden text-xs font-semibold tracking-[0.06em] text-muted-foreground uppercase lg:inline"
-            >
-              Markdown
-            </span>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="-mr-1.5 ml-auto text-muted-foreground"
-              // Giữ focus và vùng chọn trong editor khi bấm chuột.
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                const view = editorViewRef.current;
-                if (!view) return;
-                toggleCodeCommand(view);
-                view.focus();
-              }}
-              aria-keyshortcuts={isMac() ? 'Meta+Shift+C' : 'Control+Shift+C'}
-            >
-              <SquareCode aria-hidden />
-              Code
-              <kbd
-                className="hidden font-mono text-[0.7rem] opacity-70 sm:inline"
-                suppressHydrationWarning
-              >
-                {isMac() ? '⇧⌘C' : 'Ctrl+Shift+C'}
-              </kbd>
-            </Button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto px-3">
-            <MarkdownEditor
-              value={draft.content}
-              onChange={(v) => set('content', v)}
-              placeholder="Viết Markdown…"
-              onView={(view) => {
-                editorViewRef.current = view;
-              }}
-            />
-          </div>
+          <MarkdownEditor
+            value={draft.content}
+            onChange={(v) => set('content', v)}
+            placeholder="Viết Markdown…"
+            onView={(view) => {
+              editorViewRef.current = view;
+            }}
+          />
         </div>
-        <div
-          role="region"
-          aria-label="Xem trước"
-          className={cn(
-            'flex min-h-[60dvh] min-w-0 flex-col bg-muted/40 lg:min-h-0',
-            tab !== 'preview' && 'hidden lg:flex',
-          )}
-        >
-          <div aria-hidden className={paneHeader}>
-            Xem trước
-          </div>
-          <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+        {mode === 'view' ? (
+          <div
+            role="region"
+            aria-label="Nội dung"
+            title="Nhấp đúp để sửa"
+            onDoubleClick={() => switchMode('edit')}
+            className="min-h-0 flex-1 overflow-auto px-5 py-4"
+          >
             <MarkdownPreview content={draft.content} />
           </div>
-        </div>
+        ) : null}
       </div>
 
       <ConflictDialog

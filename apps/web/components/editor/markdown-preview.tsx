@@ -2,6 +2,7 @@ import ReactMarkdown, { type Components, type Options } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import { rehypeHeadingIds } from '@/lib/rehype-heading-ids';
+import { remarkSoftBreaks } from '@/lib/remark-soft-breaks';
 import { cn } from '@/lib/utils';
 
 // KHÔNG thêm rehype-raw: HTML trong note sẽ được render thật, mở đường XSS.
@@ -23,6 +24,8 @@ const components: Components = {
   pre: ({ node: _node, ...props }) => <pre tabIndex={0} {...props} />,
 };
 
+// Xuống dòng là xuống dòng (như editor), không dồn các dòng thành một đoạn.
+const REMARK_PLUGINS: NonNullable<Options['remarkPlugins']> = [remarkGfm, remarkSoftBreaks];
 type Plugins = NonNullable<Options['rehypePlugins']>;
 const PREVIEW_PLUGINS: Plugins = [[rehypeHighlight, { detect: false }]];
 const READING_PLUGINS: Plugins = [[rehypeHighlight, { detect: false }], rehypeHeadingIds];
@@ -57,7 +60,7 @@ export function MarkdownPreview({
     >
       {content.trim() ? (
         <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
+          remarkPlugins={REMARK_PLUGINS}
           rehypePlugins={reading ? READING_PLUGINS : PREVIEW_PLUGINS}
           components={components}
         >
