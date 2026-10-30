@@ -55,7 +55,7 @@ function findFences(lines: Line[]): { open: number; close: number | null }[] {
 }
 
 /**
- * Bật/tắt code block cho các dòng đang chọn (Ctrl/Cmd+Shift+C):
+ * Bật/tắt code block (Ctrl/Cmd+Alt+Shift+C; Ctrl/Cmd+Shift+C khi chọn nhiều dòng):
  * - Vùng chọn nằm trọn trong một code fence: bỏ hai dòng rào, giữ nội dung.
  * - Không chọn gì: chữ sau con trỏ vào block (con trỏ ở cuối dòng thì mở block rỗng ở dòng dưới),
  *   chữ trước con trỏ ở lại dòng trên. Có vùng chọn: chỉ phần được chọn vào block.
@@ -107,10 +107,86 @@ export function toggleCodeBlock(doc: string, from: number, to: number): TextEdit
   };
 }
 
-/** Lệnh CodeMirror (dùng cho keymap và nút trên thanh công cụ). Chỉ import type nên không kéo CodeMirror vào bundle. */
-export function toggleCodeBlockCommand(view: EditorView): boolean {
+/** Các inline code trên một dòng: chuỗi n dấu ` đóng bằng chuỗi đúng n dấu ` kế tiếp (CommonMark). */
+function inlineCodeSpans(text: string): { from: number; to: number; ticks: number }[] {
+  const runs = [...text.matchAll(/`+/g)].map((m) => ({ at: m.index, len: m[0].length }));
+  const spans: { from: number; to: number; ticks: number }[] = [];
+  for (let i = 0; i < runs.length; i++) {
+    const open = runs[i]!;
+    const j = runs.findIndex((r, k) => k > i && r.len === open.len);
+    if (j < 0) continue;
+    spans.push({ from: open.at, to: runs[j]!.at + open.len, ticks: open.len });
+    i = j;
+  }
+  return spans;
+}
+
+/**
+ * Bật/tắt inline code trong một dòng (code nằm cùng dòng với chữ, giống Slack):
+ * - Có vùng chọn: bọc bằng ` (dài hơn chuỗi ` có sẵn bên trong).
+ * - Không chọn gì: chèn `` và đặt con trỏ vào giữa để gõ tiếp.
+ * - Con trỏ ở cuối nội dung một inline code: nhảy ra sau dấu ` đóng (thoát như Slack, không đổi chữ).
+ * - Con trỏ/vùng chọn khác nằm trong inline code: bỏ hai đầu `, giữ nội dung.
+ */
+export function toggleInlineCode(doc: string, from: number, to: number): TextEdit {
+  const lines = splitLines(doc);
+  const line = lines[lineIndexAt(lines, from)]!;
+  const span = inlineCodeSpans(line.text)
+    .map((s) => ({ ...s, from: s.from + line.from, to: s.to + line.from }))
+    .find((s) => s.from <= from && to <= s.to);
+  if (span) {
+    let innerFrom = span.from + span.ticks;
+    let innerTo = span.to - span.ticks;
+    if (from === to && from === innerTo && innerTo > innerFrom) {
+      return { from, to, insert: '', selFrom: span.to, selTo: span.to };
+    }
+    let inner = doc.slice(innerFrom, innerTo);
+    // Khoảng trắng đệm hai đầu (dùng khi nội dung bắt đầu/kết thúc bằng `) cũng bỏ đi.
+    if (inner.length > 2 && inner.startsWith(' ') && inner.endsWith(' ')) {
+      innerFrom++;
+      innerTo--;
+      inner = inner.slice(1, -1);
+    }
+    const map = (p: number) => Math.min(Math.max(p, innerFrom), innerTo) - innerFrom + span.from;
+    return { from: span.from, to: span.to, insert: inner, selFrom: map(from), selTo: map(to) };
+  }
+  // `` rỗng vừa chèn (chưa thành inline code): bấm lại thì bỏ.
+  if (from === to && doc[from - 1] === '`' && doc[from] === '`') {
+    return { from: from - 1, to: from + 1, insert: '', selFrom: from - 1, selTo: from - 1 };
+  }
+  const inner = doc.slice(from, to);
+  const longest = Math.max(0, ...[...inner.matchAll(/`+/g)].map((m) => m[0].length));
+  const pad = inner.startsWith('`') || inner.endsWith('`') ? ' ' : '';
+  const open = '`'.repeat(longest + 1) + pad;
+  const close = pad + '`'.repeat(longest + 1);
+  return {
+    from,
+    to,
+    insert: open + inner + close,
+    selFrom: from + open.length,
+    selTo: to + open.length,
+  };
+}
+
+/**
+ * Ctrl/Cmd+Shift+C: vùng chọn nhiều dòng, hoặc con trỏ đang trong code block thì bật/tắt code block;
+ * còn lại bật/tắt inline code.
+ */
+export function toggleCode(doc: string, from: number, to: number): TextEdit {
+  const lines = splitLines(doc);
+  const startLine = lineIndexAt(lines, from);
+  let endLine = lineIndexAt(lines, to);
+  if (to > from && endLine > startLine && lines[endLine]!.from === to) endLine--;
+  const inFence = findFences(lines).some(
+    (b) => b.open <= startLine && startLine <= (b.close ?? lines.length - 1),
+  );
+  if (endLine !== startLine || inFence) return toggleCodeBlock(doc, from, to);
+  return toggleInlineCode(doc, from, Math.min(to, lines[startLine]!.to));
+}
+
+function runEdit(view: EditorView, fn: (doc: string, from: number, to: number) => TextEdit) {
   const { from, to } = view.state.selection.main;
-  const edit = toggleCodeBlock(view.state.doc.toString(), from, to);
+  const edit = fn(view.state.doc.toString(), from, to);
   view.dispatch({
     changes: { from: edit.from, to: edit.to, insert: edit.insert },
     selection: { anchor: edit.selFrom, head: edit.selTo },
@@ -119,3 +195,7 @@ export function toggleCodeBlockCommand(view: EditorView): boolean {
   });
   return true;
 }
+
+// Lệnh CodeMirror (dùng cho keymap và nút trên thanh công cụ). Chỉ import type nên không kéo CodeMirror vào bundle.
+export const toggleCodeCommand = (view: EditorView) => runEdit(view, toggleCode);
+export const toggleCodeBlockCommand = (view: EditorView) => runEdit(view, toggleCodeBlock);

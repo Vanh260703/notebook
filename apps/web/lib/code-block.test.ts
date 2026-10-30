@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toggleCodeBlock, type TextEdit } from './code-block';
+import { toggleCode, toggleCodeBlock, toggleInlineCode, type TextEdit } from './code-block';
 
 /** Áp dụng edit, trả về doc mới với vùng chọn đánh dấu bằng [ ] (hoặc | nếu rỗng). */
 function apply(doc: string, edit: TextEdit): string {
@@ -15,17 +15,19 @@ function apply(doc: string, edit: TextEdit): string {
   );
 }
 
+type Toggle = (doc: string, from: number, to: number) => TextEdit;
+
 /** Doc viết kèm vùng chọn: `|` là con trỏ, `[...]` là vùng chọn. */
-function run(marked: string): string {
+function run(marked: string, fn: Toggle = toggleCodeBlock): string {
   const caret = marked.indexOf('|');
   if (caret >= 0) {
     const doc = marked.replace('|', '');
-    return apply(doc, toggleCodeBlock(doc, caret, caret));
+    return apply(doc, fn(doc, caret, caret));
   }
   const from = marked.indexOf('[');
   const to = marked.indexOf(']') - 1;
   const doc = marked.replace('[', '').replace(']', '');
-  return apply(doc, toggleCodeBlock(doc, from, to));
+  return apply(doc, fn(doc, from, to));
 }
 
 describe('toggleCodeBlock', () => {
@@ -88,5 +90,74 @@ describe('toggleCodeBlock', () => {
 
   it('does not treat ~~~ as closing a ``` block', () => {
     expect(run('```\n~~~\nx|\n```')).toBe('~~~\nx|');
+  });
+});
+
+describe('toggleInlineCode', () => {
+  const inline = (m: string) => run(m, toggleInlineCode);
+
+  it('wraps the selection', () => {
+    expect(inline('chạy [docker ps] nhé')).toBe('chạy `[docker ps]` nhé');
+  });
+
+  it('inserts an empty pair with the caret inside', () => {
+    expect(inline('chạy |')).toBe('chạy `|`');
+  });
+
+  it('removes an empty pair when pressed again', () => {
+    expect(inline('chạy `|`')).toBe('chạy |');
+  });
+
+  it('jumps out of the code when the caret is at its end, like Slack', () => {
+    expect(inline('a `docker ps|` b')).toBe('a `docker ps`| b');
+  });
+
+  it('unwraps when the caret is in the middle', () => {
+    expect(inline('a `dock|er` b')).toBe('a dock|er b');
+  });
+
+  it('unwraps when the selection is inside', () => {
+    expect(inline('a `[docker] ps` b')).toBe('a [docker] ps b');
+  });
+
+  it('only looks at code spans on the current line', () => {
+    expect(inline('`x\ny|`')).toBe('`x\ny`|``');
+  });
+
+  it('uses longer ticks and padding when the text has backticks', () => {
+    expect(inline('[a`b]')).toBe('``[a`b]``');
+    expect(inline('[`a]')).toBe('`` [`a] ``');
+  });
+
+  it('unwraps when the selection is exactly an existing code span', () => {
+    expect(inline('[`x`]')).toBe('[x]');
+  });
+
+  it('round-trips with padding', () => {
+    expect(inline('`` `x|` ``')).toBe('`x|`');
+  });
+});
+
+describe('toggleCode (Ctrl+Shift+C)', () => {
+  const smart = (m: string) => run(m, toggleCode);
+
+  it('uses inline code within one line', () => {
+    expect(smart('a [b] c')).toBe('a `[b]` c');
+  });
+
+  it('keeps the code on the same line as the text before it', () => {
+    expect(smart('Chia terminator trên/dưới: |')).toBe('Chia terminator trên/dưới: `|`');
+  });
+
+  it('uses a code block for a multi-line selection', () => {
+    expect(smart('[a\nb]')).toBe('```\n[a\nb]\n```\n');
+  });
+
+  it('treats a whole-line selection (ending at the next line) as inline', () => {
+    expect(smart('[abc\n]d')).toBe('`[abc]`\nd');
+  });
+
+  it('removes the code block when the caret is inside one', () => {
+    expect(smart('```\nx|\n```')).toBe('x|');
   });
 });

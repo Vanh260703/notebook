@@ -58,6 +58,7 @@
   --color-type-personal: var(--type-personal);
   --color-type-personal-bg: var(--type-personal-bg);
   --color-mark: var(--mark);
+  --color-code-ink: var(--code-ink);
   --shadow-elev-1: var(--elev-1);
   --shadow-elev-2: var(--elev-2);
   --shadow-elev-3: var(--elev-3);
@@ -112,7 +113,7 @@
   --selection: oklch(0.88 0.06 277);
   /* Nền <mark> của kết quả tìm kiếm, chữ text-foreground. */
   --mark: oklch(0.92 0.1 95);
-  /* Chữ trong code block (cam như Slack), đạt 4.5:1 trên nền --muted. */
+  /* Chữ code (cam như Slack), đạt 4.5:1 trên nền --muted. */
   --code-ink: oklch(0.52 0.15 45);
 
   --status-inbox: oklch(0.5 0.11 60);
@@ -405,6 +406,21 @@ html:has([data-reading]) {
 }
 .markdown-editor .cm-editor .cm-placeholder {
   color: var(--muted-foreground);
+}
+/* Inline code (components/editor/code-style.ts): ô cam cùng dòng với chữ, dấu ` đã ẩn. */
+.markdown-editor .cm-inline-code {
+  color: var(--code-ink);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  padding: 0.0625rem 0.25rem;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  font-variant-ligatures: none;
+}
+/* Cặp `` rỗng vừa chèn: hiện thành ô rỗng (dấu ` trong suốt giữ chỗ), con trỏ ở giữa. */
+.markdown-editor .cm-inline-code-empty {
+  color: transparent;
 }
 /* Code block dạng hộp (components/editor/code-style.ts): dòng ``` đã ẩn, các dòng code ghép
  * thành một khung có viền vừa với chữ, chữ cam như bản xem trước. */

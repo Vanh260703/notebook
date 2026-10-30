@@ -50,8 +50,8 @@ export function MarkdownPreview({
         reading
           ? 'text-[1.0625rem] md:prose-lg md:text-[1.125rem] prose-headings:scroll-mt-20 prose-pre:overflow-x-auto'
           : 'prose-sm',
-        // Code inline có nền; code trong khối <pre> thì không (pre đã có nền và padding).
-        '[&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5',
+        // Code inline: ô cam như trong editor; code trong khối <pre> thì không (pre đã có nền và padding).
+        '[&_:not(pre)>code]:rounded [&_:not(pre)>code]:border [&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:py-0.5 [&_:not(pre)>code]:text-code-ink',
         className,
       )}
     >

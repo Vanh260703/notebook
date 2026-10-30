@@ -5,7 +5,7 @@ import { languages } from '@codemirror/language-data';
 import CodeMirror, { EditorView, keymap, Prec } from '@uiw/react-codemirror';
 import { useTheme } from 'next-themes';
 import { useMemo } from 'react';
-import { toggleCodeBlockCommand } from '@/lib/code-block';
+import { toggleCodeBlockCommand, toggleCodeCommand } from '@/lib/code-block';
 import { codeStyle } from './code-style';
 
 export interface CodeMirrorEditorProps {
@@ -32,11 +32,11 @@ export default function CodeMirrorEditor({
   const { resolvedTheme } = useTheme();
   const extensions = useMemo(
     () => [
-      // Ctrl/Cmd+Shift+C bật/tắt code block. Thêm Ctrl/Cmd+Alt+Shift+C (phím code block của Slack)
-      // phòng khi trình duyệt giữ Ctrl+Shift+C để mở DevTools.
+      // Ctrl/Cmd+Shift+C: code cùng dòng (inline, như Slack); chọn nhiều dòng thì thành code block.
+      // Ctrl/Cmd+Alt+Shift+C: luôn là code block.
       Prec.highest(
         keymap.of([
-          { key: 'Mod-Shift-c', run: toggleCodeBlockCommand },
+          { key: 'Mod-Shift-c', run: toggleCodeCommand },
           { key: 'Mod-Alt-Shift-c', run: toggleCodeBlockCommand },
         ]),
       ),

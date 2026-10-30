@@ -41,7 +41,7 @@ import { GuardedLink, useRegisterUnsavedForm } from '@/components/unsaved-guard'
 import { errorMessage, isApiError } from '@/lib/api/client';
 import { createNote, restoreNote, updateNote } from '@/lib/api/notes';
 import { copyText } from '@/lib/clipboard';
-import { toggleCodeBlockCommand } from '@/lib/code-block';
+import { toggleCodeCommand } from '@/lib/code-block';
 import { formatDateTime, formatSavedAt, formatShortDay } from '@/lib/date';
 import { STATUS_LABEL, TYPE_LABEL } from '@/lib/labels';
 import {
@@ -750,13 +750,13 @@ export function NoteForm(props: Props) {
               onClick={() => {
                 const view = editorViewRef.current;
                 if (!view) return;
-                toggleCodeBlockCommand(view);
+                toggleCodeCommand(view);
                 view.focus();
               }}
               aria-keyshortcuts={isMac() ? 'Meta+Shift+C' : 'Control+Shift+C'}
             >
               <SquareCode aria-hidden />
-              Code block
+              Code
               <kbd
                 className="hidden font-mono text-[0.7rem] opacity-70 sm:inline"
                 suppressHydrationWarning
